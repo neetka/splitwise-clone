@@ -1,5 +1,12 @@
 # Splitwise Clone MVP Specification - Source of Truth
 
+**Implementation Start Date**: June 14, 2026  
+**Current Phase Status**: Phase 1: Database & Authentication (Completed)  
+**Finalized Documentation References**:
+- [BUILD_PLAN.md](file:///Users/neetka/Desktop/splitwise-clone/BUILD_PLAN.md)
+- [DECISIONS.md](file:///Users/neetka/Desktop/splitwise-clone/DECISIONS.md)
+- [SCOPE.md](file:///Users/neetka/Desktop/splitwise-clone/SCOPE.md)
+
 This document serves as the absolute, complete source of truth for the Splitwise Clone MVP project. The application is designed to be fully buildable, runnable, and verifiable from the definitions and constraints documented here.
 
 ---

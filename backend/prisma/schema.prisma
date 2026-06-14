@@ -1,0 +1,198 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String            @id @default(uuid()) @db.Uuid
+  name         String
+  email        String            @unique
+  passwordHash String            @map("password_hash")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  memberships  GroupMembership[]
+  paidExpenses Expense[]         @relation("PaidByUser")
+  splits       ExpenseSplit[]
+  sentSettlements     Settlement[]      @relation("SettlementPayer")
+  receivedSettlements Settlement[]      @relation("SettlementReceiver")
+  comments     ExpenseComment[]
+  importBatches ImportBatch[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Group {
+  id          String            @id @default(uuid()) @db.Uuid
+  name        String
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  memberships GroupMembership[]
+  expenses    Expense[]
+  settlements Settlement[]
+  importBatches ImportBatch[]
+
+  @@map("groups")
+}
+
+model GroupMembership {
+  id        String    @id @default(uuid()) @db.Uuid
+  groupId   String    @map("group_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  joinedAt  DateTime  @default(now()) @map("joined_at")
+  leftAt    DateTime? @map("left_at")
+  isActive  Boolean   @default(true) @map("is_active")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("group_memberships")
+}
+
+model Expense {
+  id           String           @id @default(uuid()) @db.Uuid
+  groupId      String           @map("group_id") @db.Uuid
+  title        String
+  totalAmount  Decimal          @map("total_amount") @db.Decimal(12, 2)
+  currency     String
+  paidByUserId String           @map("paid_by_user_id") @db.Uuid
+  date         DateTime         @default(now())
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  group      Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidByUser User             @relation("PaidByUser", fields: [paidByUserId], references: [id], onDelete: Restrict)
+  splits     ExpenseSplit[]
+  comments   ExpenseComment[]
+
+  @@index([groupId])
+  @@index([paidByUserId])
+  @@map("expenses")
+}
+
+enum SplitType {
+  EQUAL
+  UNEQUAL
+  PERCENTAGE
+  SHARE
+}
+
+model ExpenseSplit {
+  id         String    @id @default(uuid()) @db.Uuid
+  expenseId  String    @map("expense_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  amount     Decimal   @db.Decimal(12, 2)
+  splitType  SplitType @map("split_type")
+  splitValue Decimal?  @map("split_value") @db.Decimal(12, 4)
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@index([userId])
+  @@map("expense_splits")
+}
+
+model Settlement {
+  id         String   @id @default(uuid()) @db.Uuid
+  groupId    String   @map("group_id") @db.Uuid
+  payerId    String   @map("payer_id") @db.Uuid
+  receiverId String   @map("receiver_id") @db.Uuid
+  amount     Decimal  @db.Decimal(12, 2)
+  currency   String
+  date       DateTime @default(now())
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  group    Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  payer    User  @relation("SettlementPayer", fields: [payerId], references: [id], onDelete: Restrict)
+  receiver User  @relation("SettlementReceiver", fields: [receiverId], references: [id], onDelete: Restrict)
+
+  @@index([groupId])
+  @@index([payerId])
+  @@index([receiverId])
+  @@map("settlements")
+}
+
+model ExpenseComment {
+  id          String   @id @default(uuid()) @db.Uuid
+  expenseId   String   @map("expense_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  commentText String   @map("comment_text") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@index([userId])
+  @@map("expense_comments")
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+model ImportBatch {
+  id                 String           @id @default(uuid()) @db.Uuid
+  groupId            String           @map("group_id") @db.Uuid
+  uploadedByUserId   String           @map("uploaded_by_user_id") @db.Uuid
+  filename           String
+  status             ImportStatus     @default(PENDING)
+  exchangeRate       Decimal          @default(83.00) @map("exchange_rate") @db.Decimal(10, 4)
+  createdAt          DateTime         @default(now()) @map("created_at")
+  anomalies          ImportAnomaly[]
+
+  group          Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  uploadedByUser User  @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([groupId])
+  @@map("import_batches")
+}
+
+enum AnomalySeverity {
+  WARNING
+  CRITICAL
+}
+
+model ImportAnomaly {
+  id               String          @id @default(uuid()) @db.Uuid
+  batchId          String          @map("batch_id") @db.Uuid
+  rowIndex         Int             @map("row_index")
+  rawRowData       Json            @map("raw_row_data")
+  anomalyType      String          @map("anomaly_type")
+  severity         AnomalySeverity
+  description      String
+  resolved         Boolean         @default(false)
+  resolutionAction Json?           @map("resolution_action")
+  resolvedAt       DateTime?       @map("resolved_at")
+
+  batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@map("import_anomalies")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  actionType    String   @map("action_type")
+  entityType    String   @map("entity_type")
+  entityId      String   @map("entity_id") @db.Uuid
+  changeSummary String   @map("change_summary")
+  previousState Json?    @map("previous_state")
+  newState      Json?    @map("new_state")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([entityId])
+  @@map("audit_logs")
+}
