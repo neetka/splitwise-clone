@@ -4,6 +4,7 @@ const authRoutes = require("./routes/authRoutes");
 const groupRoutes = require("./routes/groupRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
 const settlementRoutes = require("./routes/settlementRoutes");
+const importRoutes = require("./routes/importRoutes");
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/settlements", settlementRoutes);
+app.use("/api/imports", importRoutes);
 
 // Health Check Route
 app.get("/health", (req, res) => {

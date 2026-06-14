@@ -364,3 +364,11 @@ All failed API responses must return:
 - **Verification & Testing**:
   - Developed `scratch/test_settlements.js` to assert the over-settlement block (400 Bad Request), verify that partial settlements correctly reduce the peer-to-peer edge, and that full settlements perfectly erase the edge.
   - **Test Results**: All logic validations and API tests passed successfully.
+
+### Phase 6: CSV Import
+- **Backend Setup**: Installed `multer` for multipart form data uploads and `csv-parser` for stream processing.
+- **Import Controller**: Created `uploadCsv` to parse `expenses_export.csv`, validate core schema fields (missing title, invalid amount, unsupported currency, missing payer), and insert `ImportAnomaly` records tied to an `ImportBatch`.
+- **Review Endpoint**: Created `GET /api/imports/batches/:batchId/review` to fetch the batch alongside its detected anomalies.
+- **APIs**:
+  - `POST /api/groups/:id/imports`
+  - `GET /api/imports/batches/:batchId/review`
