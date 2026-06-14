@@ -314,3 +314,28 @@ All failed API responses must return:
     - `GET /api/auth/me` (Valid JWT) -> 200 Success (returns current user object)
     - `GET /api/auth/me` (Invalid JWT) -> 403 Forbidden (`AUTH_INVALID`)
     - `GET /api/auth/me` (Missing JWT) -> 401 Unauthorized (`AUTH_REQUIRED`)
+
+### Phase 2: Group Management (Completed: June 14, 2026)
+- **Schema Decisions**: 
+  - Added `isAdmin Boolean @default(false)` to `GroupMembership` to designate group creators and administrators.
+  - Ensured historical expense tracking by implementing a soft-deletion mechanism for members (`isActive: false` and `leftAt: now()`) rather than deleting rows.
+- **Auto-Creation**: Implemented automatic creation of stub user accounts when users invite unregistered emails, keeping expenses trackable immediately.
+- **APIs & Authorization Middleware**:
+  - `POST /api/groups` (Creates group and sets creator as active admin)
+  - `GET /api/groups` & `GET /api/groups/:id` (Any active or inactive member can view historical group state)
+  - `PUT /api/groups/:id` & `DELETE /api/groups/:id` (Restricted to active admins only)
+  - `POST /api/groups/:id/members` (Restricted to active members, reactivates soft-deleted members if applicable)
+  - `DELETE /api/groups/:id/members/:memberId` (Restricted to active admins, executes soft-delete)
+- **Verification & Testing**:
+  - Developed and ran `scratch/test_groups.js` which validated 11 core Group Management integration scenarios.
+  - **Test Results**: All tests passed successfully, verifying valid token generation, admin designation, access rejections (403), proper modifications, and soft-removals.
+
+### Phase 3: Expense Management (Completed: June 14, 2026)
+- **Mathematical Split Logic**: Implemented `splitCalculator.js` to accurately distribute fractional cents in EQUAL, PERCENTAGE, and SHARE splits. Implemented remainder assignment logic (e.g., in a 100 / 3 EQUAL split, the payer correctly receives the 33.34 fraction to resolve the 0.01 remainder).
+- **APIs & Controllers**:
+  - Created `POST /api/expenses`, `GET /api/expenses/:id`, `PUT /api/expenses/:id`, and `DELETE /api/expenses/:id` in `expenseRoutes.js` under robust access control.
+  - Linked `GET /api/groups/:id/expenses` in `groupRoutes.js`.
+- **Database Safety**: All creations and updates of expenses and their connected `ExpenseSplit` records are fully encapsulated in Prisma Interactive Transactions (`$transaction`) preventing data corruption or orphaned splits.
+- **Verification & Testing**:
+  - Developed and ran `scratch/test_expenses.js` validating EQUAL remainder logic, UNEQUAL summation constraints, PERCENTAGE/SHARE exact scaling, and API routing.
+  - **Test Results**: All mathematical and API endpoint tests passed successfully.

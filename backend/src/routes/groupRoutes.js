@@ -18,6 +18,8 @@ const {
   removeMember,
 } = require("../controllers/groupController");
 
+const { getGroupExpenses } = require("../controllers/expenseController");
+
 // Apply authentication token verification to all group routes
 router.use(verifyToken);
 
@@ -29,6 +31,9 @@ router.get("/", getGroups);
 
 // Get detailed information of a group: GET /api/groups/:id
 router.get("/:id", requireGroupMember, getGroupById);
+
+// Get all expenses for a group: GET /api/groups/:id/expenses
+router.get("/:id/expenses", requireGroupMember, getGroupExpenses);
 
 // Update a group details: PUT /api/groups/:id
 router.put("/:id", requireGroupAdmin, updateGroup);
