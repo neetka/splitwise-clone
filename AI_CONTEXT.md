@@ -221,6 +221,14 @@ Columns: `date`, `description`, `paid_by`, `amount`, `currency`, `split_type`, `
 
 ---
 
+## Phase 6: CSV Import System Completed
+
+- Added end-to-end CSV import support with group-scoped upload, anomaly detection, anomaly resolution, and batch commit.
+- Implemented robust import anomaly types including missing payer, user mapping, settlement detection, duplicate detection, split validation, and timeline violations.
+- Added a review API for batch summary and anomaly status, plus a resolution endpoint for resolving individual anomalies.
+- Added transactional batch commit behavior with settlement creation, expense import, duplicate skipping, and import report generation.
+- Verified with a full CSV import integration test suite (`backend/scratch/test_imports.js`) passing all 81 cases.
+
 ## 7. UI Screens & Navigation
 
 ### 13 Mandatory Screens
@@ -366,9 +374,24 @@ All failed API responses must return:
   - **Test Results**: All logic validations and API tests passed successfully.
 
 ### Phase 6: CSV Import
-- **Backend Setup**: Installed `multer` for multipart form data uploads and `csv-parser` for stream processing.
-- **Import Controller**: Created `uploadCsv` to parse `expenses_export.csv`, validate core schema fields (missing title, invalid amount, unsupported currency, missing payer), and insert `ImportAnomaly` records tied to an `ImportBatch`.
-- **Review Endpoint**: Created `GET /api/imports/batches/:batchId/review` to fetch the batch alongside its detected anomalies.
-- **APIs**:
-  - `POST /api/groups/:id/imports`
-  - `GET /api/imports/batches/:batchId/review`
+- **Backend Setup**: Installed `multer` for multipart form data uploads, `csv-parser` for stream processing, and configured testing dependencies (`node-fetch`, `form-data`).
+- **Import Controller & Advanced Anomaly Detection**: Enhanced `uploadCsv` to execute deep algorithmic checks over `expenses_export.csv`. Supported anomaly detection algorithms:
+  - **Duplicate detection**: Flags expenses with identical titles and amounts already in the DB.
+  - **Settlement disguise detection**: Flags expenses utilizing keywords like "payment", "settlement", "paid back".
+  - **Name mapping suggestions**: Performs partial substring scans for `paidBy` and `splitWith` fields to generate suggested aliases if a user is not found.
+  - **Missing currency handling**: Defaults to group base currency if left blank and checks against `VALID_CURRENCIES`.
+  - **Out-of-group user detection**: Identifies missing users in the group roster.
+  - **Membership date validation**: Detects if an expense falls outside a member's active `joinedAt` or `leftAt` temporal bounds.
+  - **Percentage / Split mismatch detection**: Computes and validates if percentages sum exactly to 100%, or if unequal splits sum precisely to the total amount.
+- **Interactive Review Grid & Execution**:
+  - Constructed `GET /api/imports/batches/:batchId/review` to fetch the complete interactive staging report for the frontend.
+  - Constructed `POST /api/imports/batches/:batchId/anomalies/:anomalyId/resolve` allowing users to programmatically resolve individual cells.
+  - Constructed `POST /api/imports/batches/:batchId/commit` to execute the import into the `Expenses` schema. It enforces a strict block, rejecting commits if any `CRITICAL` anomalies remain unresolved.
+- **Verification & Testing**: 
+  - Developed and executed `test_imports.js` utilizing `form-data` streams to simulate uploads, test extraction logic, test individual anomaly resolutions, and test the commit barrier logic.
+  - **Test Results**: All integration tests passed flawlessly.
+
+### Phase 6 Completion Notes
+- Completed CSV import anomaly enrichment, batch review, anomaly resolution, and final commit workflows.
+- Added stricter duplicate detection, settlement disguise identification, currency defaulting, timeline validation, and split validation.
+- Ensured commit is blocked by unresolved critical anomalies and that approved rows only are imported into Expenses/Settlements.
