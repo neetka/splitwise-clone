@@ -339,3 +339,13 @@ All failed API responses must return:
 - **Verification & Testing**:
   - Developed and ran `scratch/test_expenses.js` validating EQUAL remainder logic, UNEQUAL summation constraints, PERCENTAGE/SHARE exact scaling, and API routing.
   - **Test Results**: All mathematical and API endpoint tests passed successfully.
+
+### Phase 4: Balance Calculation Engine (Completed: June 14, 2026)
+- **Architecture**: Decided against storing static balances in the database to prevent data desynchronization. Balances are computed 100% dynamically via an in-memory directed debt graph.
+- **Aggregation & Netting**: Implemented `balanceEngine.js` which parses expenses and their splits to determine direct peer-to-peer debts. It automatically nets mutual debts (e.g. A owes B 100, B owes A 50 -> A owes B 50) but intentionally avoids graph simplification/cycle-cancelling as per requirements.
+- **APIs**:
+  - `GET /api/groups/:id/balances`: Scopes the aggregation strictly to a specific group's expenses.
+  - `GET /api/auth/me/balances`: Scopes the aggregation globally across all groups the user is a member of.
+- **Verification & Testing**:
+  - Developed `scratch/test_balances.js` which registers 3 users, generates overlapping expenses (A pays 300, B pays 150), and asserts that the netting mathematically simplifies debts correctly.
+  - **Test Results**: All group-scoped and global-scoped netting tests passed successfully.
