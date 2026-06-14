@@ -54,6 +54,12 @@ const DashboardPage = () => {
             <button type="button" onClick={() => navigate('/groups')}>
               View all groups
             </button>
+            <button type="button" onClick={() => navigate('/balances')}>
+              View balances
+            </button>
+            <button type="button" onClick={() => navigate('/settlements')}>
+              View settlements
+            </button>
           </div>
         </div>
 

@@ -253,6 +253,136 @@ a {
   gap: 8px;
 }
 
+.group-actions-card {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.balance-summary-card,
+.form-shell {
+  display: grid;
+  gap: 20px;
+  margin-top: 24px;
+  width: min(900px, 100%);
+  background: white;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  padding: 24px;
+}
+
+.balance-summary-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 24px;
+}
+
+.balance-summary-card div {
+  display: grid;
+  gap: 8px;
+}
+
+.split-detail-section,
+.preview-section {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 20px;
+  margin-top: 24px;
+}
+
+.form-shell label {
+  display: grid;
+  gap: 10px;
+  color: var(--text-h);
+}
+
+.form-shell input,
+.form-shell textarea,
+.form-shell select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  font: inherit;
+  background: #faf9ff;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.split-detail-section,
+.preview-section {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.split-table,
+.expense-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+
+.split-table th,
+.split-table td,
+.expense-table th,
+.expense-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.split-table th,
+.expense-table th {
+  background: #faf9ff;
+}
+
+.split-table tr:last-child td,
+.expense-table tr:last-child td {
+  border-bottom: none;
+}
+
+.form-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.secondary-button {
+  background: #f2f2f2;
+  color: var(--text-h);
+}
+
 .member-form {
   display: grid;
   gap: 16px;

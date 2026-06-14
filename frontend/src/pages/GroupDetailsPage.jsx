@@ -104,6 +104,18 @@ const GroupDetailsPage = () => {
         </div>
       </section>
 
+      <section className="group-actions-card">
+        <Link to={`/groups/${group.id}/expenses`} className="button-link">
+          View group expenses
+        </Link>
+        <Link to={`/groups/${group.id}/balances`} className="button-link">
+          View balances
+        </Link>
+        <Link to={`/groups/${group.id}/settlements`} className="button-link">
+          View settlements
+        </Link>
+      </section>
+
       <section className="members-section">
         <div className="members-header">
           <h2>Members</h2>
