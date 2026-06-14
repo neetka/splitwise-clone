@@ -20,6 +20,7 @@ const {
 
 const { getGroupExpenses } = require("../controllers/expenseController");
 const { getGroupBalances } = require("../controllers/balanceController");
+const { getGroupSettlements } = require("../controllers/settlementController");
 
 // Apply authentication token verification to all group routes
 router.use(verifyToken);
@@ -38,6 +39,9 @@ router.get("/:id/expenses", requireGroupMember, getGroupExpenses);
 
 // Get calculated balances for a group: GET /api/groups/:id/balances
 router.get("/:id/balances", requireGroupMember, getGroupBalances);
+
+// Get all settlements for a group: GET /api/groups/:id/settlements
+router.get("/:id/settlements", requireGroupMember, getGroupSettlements);
 
 // Update a group details: PUT /api/groups/:id
 router.put("/:id", requireGroupAdmin, updateGroup);

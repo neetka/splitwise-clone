@@ -3,9 +3,10 @@ const { round2 } = require("./splitCalculator");
 /**
  * Aggregates expenses and splits into a netted peer-to-peer debt graph.
  * @param {Array} expenses Array of Prisma expense objects including their splits
+ * @param {Array} settlements Array of Prisma settlement objects
  * @returns {Array} Flat list of peer debts { debtorId, creditorId, amount }
  */
-function aggregateBalances(expenses) {
+function aggregateBalances(expenses, settlements = []) {
   // graph[debtorId][creditorId] = total amount owed
   const graph = {};
 
@@ -25,6 +26,19 @@ function aggregateBalances(expenses) {
 
       graph[debtorId][payerId] += amount;
     }
+  }
+
+  // 2. Build reverse edges from settlements
+  for (const settlement of settlements) {
+    const { payerId, receiverId } = settlement;
+    const amount = Number(settlement.amount);
+
+    // A settlement is A paying B. This reduces A's debt to B.
+    // By adding an edge from B to A, the peer-to-peer netting will automatically subtract it.
+    if (!graph[receiverId]) graph[receiverId] = {};
+    if (!graph[receiverId][payerId]) graph[receiverId][payerId] = 0;
+
+    graph[receiverId][payerId] += amount;
   }
 
   // 2. Peer-to-Peer Netting

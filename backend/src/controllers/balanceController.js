@@ -11,8 +11,13 @@ exports.getGroupBalances = async (req, res, next) => {
       include: { splits: true }
     });
 
-    // 2. Aggregate the raw expenses into netted peer debts
-    const peerBalances = aggregateBalances(expenses);
+    // Fetch all settlements for this group
+    const settlements = await prisma.settlement.findMany({
+      where: { groupId }
+    });
+
+    // 2. Aggregate the raw expenses and settlements into netted peer debts
+    const peerBalances = aggregateBalances(expenses, settlements);
     
     // 3. Summarize the individual totals for the group
     const groupBalances = summarizeGroupBalances(peerBalances);
@@ -45,10 +50,14 @@ exports.getMyBalances = async (req, res, next) => {
 
     const groupIds = memberships.map(m => m.groupId);
 
-    // 2. Fetch all expenses across all those groups
+    // 2. Fetch all expenses and settlements across all those groups
     const expenses = await prisma.expense.findMany({
       where: { groupId: { in: groupIds } },
       include: { splits: true }
+    });
+
+    const settlements = await prisma.settlement.findMany({
+      where: { groupId: { in: groupIds } }
     });
 
     // 3. We calculate the peer-to-peer netting per group so users know *where* the debt originates
@@ -62,9 +71,19 @@ exports.getMyBalances = async (req, res, next) => {
       expensesByGroup[exp.groupId].push(exp);
     }
 
-    for (const groupId in expensesByGroup) {
-      const groupExps = expensesByGroup[groupId];
-      const peerBalances = aggregateBalances(groupExps);
+    const settlementsByGroup = {};
+    for (const stl of settlements) {
+      if (!settlementsByGroup[stl.groupId]) settlementsByGroup[stl.groupId] = [];
+      settlementsByGroup[stl.groupId].push(stl);
+    }
+
+    for (const groupId of groupIds) {
+      const groupExps = expensesByGroup[groupId] || [];
+      const groupStls = settlementsByGroup[groupId] || [];
+      
+      if (groupExps.length === 0 && groupStls.length === 0) continue;
+
+      const peerBalances = aggregateBalances(groupExps, groupStls);
       
       // Filter out only the debts that involve the requesting user
       for (const debt of peerBalances) {

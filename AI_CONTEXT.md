@@ -342,10 +342,25 @@ All failed API responses must return:
 
 ### Phase 4: Balance Calculation Engine (Completed: June 14, 2026)
 - **Architecture**: Decided against storing static balances in the database to prevent data desynchronization. Balances are computed 100% dynamically via an in-memory directed debt graph.
-- **Aggregation & Netting**: Implemented `balanceEngine.js` which parses expenses and their splits to determine direct peer-to-peer debts. It automatically nets mutual debts (e.g. A owes B 100, B owes A 50 -> A owes B 50) but intentionally avoids graph simplification/cycle-cancelling as per requirements.
+- **Aggregation & Netting**: Implemented `balanceEngine.js` which parses expenses and their splits to determine direct peer-to-peer debts. 
+  - **Peer-to-Peer Netting**: The engine automatically nets mutual debts (e.g. A owes B 100, B owes A 50 -> A owes B 50) because preserving raw obligations creates a confusing User Experience where users owe each other simultaneously. 
+  - **No Graph Simplification**: The engine intentionally avoids global graph simplification (cycle-cancelling) as per requirements, ensuring users only owe people they directly shared expenses with.
+  - **Settlements**: All future Settlement functionality will operate directly against these **netted obligations**, clearing the simplified peer edges.
 - **APIs**:
   - `GET /api/groups/:id/balances`: Scopes the aggregation strictly to a specific group's expenses.
   - `GET /api/auth/me/balances`: Scopes the aggregation globally across all groups the user is a member of.
 - **Verification & Testing**:
   - Developed `scratch/test_balances.js` which registers 3 users, generates overlapping expenses (A pays 300, B pays 150), and asserts that the netting mathematically simplifies debts correctly.
   - **Test Results**: All group-scoped and global-scoped netting tests passed successfully.
+
+### Phase 5: Settlements (Completed: June 14, 2026)
+- **Architecture**: Settlements are tracked in a dedicated `Settlements` table rather than conflated with `Expenses` to maintain schema purity. 
+- **Graph Integration**: Updated `balanceEngine.js` to ingest `Settlement` records alongside `Expense` records. A settlement acts as a reverse edge (Creditor -> Debtor) in the graph, automatically netting against the original debt edge (Debtor -> Creditor) during the peer-to-peer reduction step.
+- **Over-Settlement Protection**: `settlementController.js` actively queries the dynamic balance engine *before* creating a settlement to ensure a user cannot transfer more money than they actually owe their peer.
+- **APIs**:
+  - `POST /api/settlements`
+  - `GET /api/groups/:id/settlements`
+  - `GET /api/auth/me/settlements`
+- **Verification & Testing**:
+  - Developed `scratch/test_settlements.js` to assert the over-settlement block (400 Bad Request), verify that partial settlements correctly reduce the peer-to-peer edge, and that full settlements perfectly erase the edge.
+  - **Test Results**: All logic validations and API tests passed successfully.

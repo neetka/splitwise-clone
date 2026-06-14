@@ -51,3 +51,12 @@ This document records the design and engineering decisions for the Splitwise Clo
 - **Frontend**: Vercel (ideal for React/Vite assets).
 - **Backend**: Render (simple deployment of Node.js servers and websockets).
 - **Database**: Neon (serverless PostgreSQL with easy branching and zero-config deployment).
+
+---
+
+## 8. Debt Netting Strategy
+- **Decision**: The balance engine performs **direct peer-to-peer netting** (collapsing A->B and B->A into a single direct obligation) but does **NOT** perform **global debt simplification** (cycle-cancelling, e.g. turning A->B and B->C into A->C).
+- **Rationale**: 
+  - Without peer-to-peer netting, the UI would show a confusing state like "You owe Bob 100, and Bob owes you 50." Netting pairs down directly to "You owe Bob 50" reflects the true, expected obligation between any two people. 
+  - However, we explicitly avoid *cycle-cancelling* because re-routing debts forces users to pay people they may have never directly interacted with (e.g. "Pay Charlie 50" even though you only ate with Bob). 
+- **Impact on Settlements**: All future settlement calculations will operate directly on these **netted obligations**. If A owes B a net of 50, a settlement of 50 will perfectly clear the peer edge.
