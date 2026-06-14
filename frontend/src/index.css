@@ -190,3 +190,158 @@ button:disabled {
 a {
   color: var(--accent);
 }
+
+.page-header,
+.members-header,
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.page-header h1,
+.members-header h2 {
+  margin: 0;
+}
+
+.group-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.preview-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.group-card {
+  display: block;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #ffffff;
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.group-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.08);
+}
+
+.group-summary-card,
+.members-section {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 24px;
+}
+
+.group-summary-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 18px;
+}
+
+.group-summary-card div {
+  display: grid;
+  gap: 8px;
+}
+
+.member-form {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.member-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.member-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+
+.member-table th,
+.member-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.member-table th {
+  background: #faf9ff;
+}
+
+.member-table tr:last-child td {
+  border-bottom: none;
+}
+
+.danger-button {
+  background: #de4b4b;
+}
+
+.logout-button {
+  margin-top: 24px;
+}
+
+.empty-state,
+.page-shell p {
+  color: var(--text);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 100;
+}
+
+.modal-panel {
+  width: min(520px, 100%);
+  background: white;
+  border-radius: 22px;
+  padding: 26px;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.modal-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.success-message {
+  color: #1f6f3e;
+  background: #ecf7ec;
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin-top: 14px;
+}

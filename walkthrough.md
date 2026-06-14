@@ -24,3 +24,16 @@ This phase implements the frontend foundation required for user authentication.
 5. Log out, then log back in.
 6. Refresh the `/dashboard` page and verify the session remains active.
 7. Attempt to access `/dashboard` while logged out and confirm redirect to `/login`.
+
+## Phase 7B: Group Management UI
+- Added a dedicated group list page at `/groups`.
+- Added a group details page at `/groups/:id` with members list, add member, and remove member support.
+- Implemented a create group modal and connected it to the backend group creation API.
+- Connected group management UI flows to backend APIs for listing groups, loading group details, adding members, and removing members.
+
+## Verification steps for group management
+1. Create a new group via the dashboard or groups page.
+2. Verify the new group appears in the group list.
+3. Open the group details page.
+4. Add a group member by email and confirm they appear in the members list.
+5. Remove a member and confirm the change is reflected.

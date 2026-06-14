@@ -403,4 +403,11 @@ All failed API responses must return:
 - Configured API service with Axios and a Vite proxy to the backend.
 - Stored JWT in `localStorage` and preserved login across page refreshes.
 
+### Phase 7B: Dashboard and Group Management UI
+- Implemented the dashboard page and group list page.
+- Added a create group modal and connected it to the backend group creation API.
+- Added a group details page with membership list, member add flow, and member removal flow.
+- Connected the UI to existing backend group APIs: list groups, create group, get group details, add member, remove member.
+- Updated frontend routes to support `/groups` and `/groups/:id`.
+
 ## 7. UI Screens & Navigation
