@@ -395,3 +395,12 @@ All failed API responses must return:
 - Completed CSV import anomaly enrichment, batch review, anomaly resolution, and final commit workflows.
 - Added stricter duplicate detection, settlement disguise identification, currency defaulting, timeline validation, and split validation.
 - Ensured commit is blocked by unresolved critical anomalies and that approved rows only are imported into Expenses/Settlements.
+
+### Phase 7A: Frontend Foundation & Authentication
+- Added React + Vite frontend structure with React Router for navigation.
+- Implemented `AuthContext` for JWT storage, session restoration, and sign-in/sign-up state.
+- Added `LoginPage`, `RegisterPage`, `NotFoundPage`, `DashboardPage`, and `ProtectedRoute`.
+- Configured API service with Axios and a Vite proxy to the backend.
+- Stored JWT in `localStorage` and preserved login across page refreshes.
+
+## 7. UI Screens & Navigation
