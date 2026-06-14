@@ -291,3 +291,26 @@ All failed API responses must return:
 - `GET /api/import/batches/:batchId/anomalies`
 - `PUT /api/import/anomalies/:anomalyId/resolve` (body: resolution_action)
 - `POST /api/import/batches/:batchId/commit` (finalizes import and creates DB entries)
+
+---
+
+## 9. Implementation Progress Log
+
+### Phase 1: Database & Authentication (Completed: June 14, 2026)
+- **Database & ORM**: Setup PostgreSQL database connection on Neon DB. Configured Prisma 7 client with `@prisma/adapter-pg` and CommonJS setup. Initialized database schema with all 10 core tables: `users`, `groups`, `group_memberships`, `expenses`, `expense_splits`, `settlements`, `expense_comments`, `import_batches`, `import_anomalies`, and `audit_logs`. Completed initial migration successfully.
+- **Express Backend**: Set up Express 5.x application, CORS, JSON parsing, health check route, and structured JSON-error handlers for 404s and global exceptions in `src/app.js`. Managed server lifecycle in `src/server.js` with graceful database connection teardown on `SIGTERM`/`SIGINT`.
+- **Authentication Flow**:
+  - **Password Hashing**: Implemented hashing with `bcryptjs` (using salt round of 10) on user registration, and secure comparison on login.
+  - **Session Tokens**: Implemented token-signing with `jsonwebtoken` storing `userId`, `email`, and `name` with a `7d` expiration.
+  - **Token Middleware**: Implemented `verifyToken` middleware to extract bearer tokens from the `Authorization` header, validating claims and forwarding decoded user info on `req.user`.
+  - **APIs**: Implemented `POST /api/auth/register`, `POST /api/auth/login`, and `GET /api/auth/me`.
+- **Verification & Testing**:
+  - Created an automated integration script `scratch/test_auth.js` testing all success routes and failure scenarios.
+  - **Test Results**: All tests passed successfully:
+    - `GET /health` -> 200 Success
+    - `POST /api/auth/register` (New user) -> 201 Success (returns signed JWT)
+    - `POST /api/auth/register` (Duplicate user) -> 409 Conflict (`EMAIL_ALREADY_EXISTS`)
+    - `POST /api/auth/login` (Correct credentials) -> 200 Success (returns signed JWT)
+    - `GET /api/auth/me` (Valid JWT) -> 200 Success (returns current user object)
+    - `GET /api/auth/me` (Invalid JWT) -> 403 Forbidden (`AUTH_INVALID`)
+    - `GET /api/auth/me` (Missing JWT) -> 401 Unauthorized (`AUTH_REQUIRED`)

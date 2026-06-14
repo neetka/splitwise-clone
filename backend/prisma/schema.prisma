@@ -45,6 +45,7 @@ model GroupMembership {
   joinedAt  DateTime  @default(now()) @map("joined_at")
   leftAt    DateTime? @map("left_at")
   isActive  Boolean   @default(true) @map("is_active")
+  isAdmin   Boolean   @default(false) @map("is_admin")
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
