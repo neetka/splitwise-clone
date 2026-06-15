@@ -2,7 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { groupService, importService } from '../services/api';
-import { Plus, Users, LogOut, TrendingUp, TrendingDown, DollarSign, Wallet, RefreshCw, UploadCloud, AlertTriangle, CheckCircle2, X, AlertCircle } from 'lucide-react';
+import { DashboardLayout } from '../components/DashboardLayout';
+import { 
+  Plus, Users, LogOut, TrendingUp, TrendingDown, 
+  Wallet, RefreshCw, UploadCloud, AlertTriangle, 
+  CheckCircle2, X, AlertCircle, FileText, ArrowUpRight
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 
 const Dashboard = () => {
   const [groups, setGroups] = useState([]);
@@ -10,7 +29,7 @@ const Dashboard = () => {
   const [error, setError] = useState('');
   
   // Create Group Modal State
-  const [showModal, setShowModal] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [creating, setCreating] = useState(false);
   const [modalError, setModalError] = useState('');
@@ -58,7 +77,7 @@ const Dashboard = () => {
       const res = await importService.importCSV(selectedFile);
       if (res.success) {
         setImportReport(res.report);
-        fetchDashboardData(); // Refresh groups list & balances
+        fetchDashboardData();
       } else {
         setImportError(res.message || 'Import failed');
       }
@@ -99,14 +118,12 @@ const Dashboard = () => {
     setLoading(true);
     setError('');
     try {
-      // Also fetch approvals
       fetchPendingApprovals();
 
       const res = await groupService.listGroups();
       if (res.success) {
         setGroups(res.data);
         
-        // Calculate overall balances by fetching individual group details in parallel
         let owedToYouSum = 0;
         let youOweSum = 0;
 
@@ -134,7 +151,6 @@ const Dashboard = () => {
       }
     } catch (err) {
       setError('Failed to load dashboard data. Please reload.');
-      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -142,7 +158,6 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
-    fetchPendingApprovals();
   }, []);
 
   const handleCreateGroup = async (e) => {
@@ -158,8 +173,8 @@ const Dashboard = () => {
       const res = await groupService.createGroup(newGroupName);
       if (res.success) {
         setNewGroupName('');
-        setShowModal(false);
-        fetchDashboardData(); // Refresh list
+        setShowGroupModal(false);
+        fetchDashboardData();
       } else {
         setModalError(res.message);
       }
@@ -173,21 +188,14 @@ const Dashboard = () => {
   const handleDownloadReport = () => {
     if (!importReport) return;
 
-    const pendingApprovalsCount = importReport.anomalies.filter(a => a.actionTaken === 'Pending Approval').length;
-    const failedRowsCount = importReport.statistics.skippedRowsCount;
-
     const reportData = {
       importDate: new Date(importReport.createdAt).toLocaleString(),
-      totalRowsProcessed: "N/A (Not tracked in anomalies)",
-      successfulRows: "N/A",
-      failedRows: failedRowsCount,
-      pendingApprovals: pendingApprovalsCount,
+      failedRows: importReport.statistics.skippedRowsCount,
       anomalies: importReport.anomalies.map(a => ({
         rowNumber: a.rowNumber,
         anomalyType: a.anomalyType,
         description: a.description,
         actionTaken: a.actionTaken,
-        approvalStatus: a.actionTaken === 'Pending Approval' ? 'PENDING' : 'N/A'
       }))
     };
 
@@ -205,475 +213,345 @@ const Dashboard = () => {
   const netOverall = Number((totalOwedToYou - totalYouOwe).toFixed(2));
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      {/* Top Navbar */}
-      <nav className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-md">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500 text-white font-bold shadow-md shadow-emerald-500/10">
-                S
-              </div>
-              <span className="text-xl font-bold tracking-tight text-slate-900">Splitwise MVP</span>
-              <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-600 border border-emerald-100">INR</span>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <span className="hidden sm:inline text-sm font-medium text-slate-600">
-                Hi, <span className="font-semibold text-slate-900">{user?.name}</span>
-              </span>
-              <button 
-                onClick={logout}
-                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* Main Container */}
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
+    <DashboardLayout>
+      <div className="space-y-8 animate-in fade-in duration-500">
         
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard</h1>
-            <p className="text-sm text-slate-500 mt-1">Settle expenses and view transaction history</p>
+            <h1 className="text-3xl font-bold tracking-tight text-textPrimary">Dashboard</h1>
+            <p className="text-sm text-textSecondary mt-1">Track expenses, balances and settlements</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="icon"
               onClick={fetchDashboardData}
               disabled={loading}
-              className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 disabled:opacity-50 transition-all"
-              title="Refresh"
+              className="h-10 w-10 text-textSecondary"
             >
-              <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 px-4 py-2.5 text-sm font-semibold transition-all shadow-sm"
-            >
-              <UploadCloud className="h-5 w-5 text-slate-500" />
-              Import CSV
-            </button>
-            <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/15 transition-all"
-            >
-              <Plus className="h-5 w-5" />
-              Create Group
-            </button>
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+
+            <Dialog open={showImportModal} onOpenChange={setShowImportModal}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="h-10 border-border bg-surface hover:bg-muted text-textPrimary">
+                  <UploadCloud className="h-4 w-4 mr-2" />
+                  Import CSV
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[700px]">
+                <DialogHeader>
+                  <DialogTitle className="text-xl">Import Expenses from CSV</DialogTitle>
+                  <DialogDescription>
+                    Upload a Splitwise-formatted CSV file to batch-import group expenses.
+                  </DialogDescription>
+                </DialogHeader>
+
+                {importError && (
+                  <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm font-medium flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    {importError}
+                  </div>
+                )}
+
+                {!importReport ? (
+                  <form onSubmit={handleCSVImport} className="space-y-6 py-4">
+                    <div className="border-2 border-dashed border-border hover:border-primary rounded-xl p-10 text-center bg-muted/50 cursor-pointer transition-colors relative group">
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleFileChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                      <UploadCloud className="mx-auto h-12 w-12 text-textSecondary group-hover:text-primary transition-colors mb-4" />
+                      <p className="text-sm font-semibold text-textPrimary">
+                        {selectedFile ? selectedFile.name : 'Click or drag your CSV file here'}
+                      </p>
+                      <p className="text-xs text-textSecondary mt-2">
+                        {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Supports standard .csv format'}
+                      </p>
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="ghost" onClick={() => setShowImportModal(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={uploading || !selectedFile} className="bg-primary hover:bg-primary-hover text-white">
+                        {uploading ? (
+                          <span className="flex items-center gap-2"><RefreshCw className="h-4 w-4 animate-spin" /> Processing...</span>
+                        ) : 'Upload and Import'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                ) : (
+                  <div className="space-y-6 py-4">
+                    {/* Import Report View */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <Card className="shadow-none border-border">
+                        <CardHeader className="p-4 pb-2">
+                          <CardDescription className="uppercase font-semibold text-[10px]">Status</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0">
+                          <Badge variant={importReport.status === 'COMPLETED' ? 'default' : 'destructive'} className={importReport.status === 'COMPLETED' ? 'bg-success hover:bg-success/90' : ''}>
+                            {importReport.status}
+                          </Badge>
+                        </CardContent>
+                      </Card>
+                      <Card className="shadow-none border-border">
+                        <CardHeader className="p-4 pb-2">
+                          <CardDescription className="uppercase font-semibold text-[10px]">Anomalies</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0">
+                          <span className="text-2xl font-bold text-textPrimary">{importReport.statistics.totalAnomalies}</span>
+                        </CardContent>
+                      </Card>
+                      <Card className="shadow-none border-border">
+                        <CardHeader className="p-4 pb-2">
+                          <CardDescription className="uppercase font-semibold text-[10px]">Skipped Rows</CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0">
+                          <span className="text-2xl font-bold text-destructive">{importReport.statistics.skippedRowsCount}</span>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className="rounded-md border border-border">
+                      <ScrollArea className="h-[250px]">
+                        <div className="p-4">
+                          <h4 className="text-sm font-semibold mb-4 text-textPrimary">Validation Logs</h4>
+                          {importReport.anomalies.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-8 text-center">
+                              <CheckCircle2 className="h-10 w-10 text-success mb-2" />
+                              <p className="text-sm font-medium text-textPrimary">Zero Anomalies!</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {importReport.anomalies.map((anomaly) => (
+                                <div key={anomaly.id} className="flex gap-4 items-start p-3 rounded-lg bg-muted/50 border border-border">
+                                  <Badge variant="outline" className="shrink-0 font-mono text-xs">Row {anomaly.rowNumber}</Badge>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-semibold text-textPrimary">{anomaly.anomalyType}</span>
+                                      <Badge variant="secondary" className="text-[10px] h-5">{anomaly.actionTaken}</Badge>
+                                    </div>
+                                    <p className="text-xs text-textSecondary">{anomaly.description}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+
+                    <DialogFooter>
+                      <Button variant="outline" onClick={handleDownloadReport}>Download Report</Button>
+                      <Button onClick={() => { setShowImportModal(false); setImportReport(null); fetchDashboardData(); }} className="bg-primary hover:bg-primary-hover">
+                        Done
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={showGroupModal} onOpenChange={setShowGroupModal}>
+              <DialogTrigger asChild>
+                <Button className="h-10 bg-primary hover:bg-primary-hover text-white shadow-sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Group
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Create New Group</DialogTitle>
+                  <DialogDescription>
+                    Start a new group to split expenses with friends or roommates.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleCreateGroup} className="space-y-4 pt-4">
+                  {modalError && (
+                    <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm font-medium">
+                      {modalError}
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-textPrimary">Group Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Goa Trip 2026"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      className="w-full flex h-10 rounded-md border border-border bg-surface px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => setShowGroupModal(false)}>Cancel</Button>
+                    <Button type="submit" disabled={creating} className="bg-primary hover:bg-primary-hover text-white">
+                      {creating ? 'Creating...' : 'Create Group'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
         {/* Error Alert */}
         {error && (
-          <div className="rounded-xl bg-red-50 p-4 text-sm font-medium text-red-600 border border-red-100 shadow-sm">
+          <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm font-medium flex items-center gap-2">
+            <AlertCircle className="h-4 w-4" />
             {error}
           </div>
         )}
 
-        {/* Balance Summaries Banner */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          {/* Owed To You */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm relative overflow-hidden flex flex-col justify-between">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Owed to you</p>
-                <h3 className="text-2xl font-extrabold text-emerald-600 mt-1">₹{totalOwedToYou}</h3>
+        {/* Balance Summaries Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="hover:shadow-md transition-shadow duration-200 border-border/60">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-textSecondary uppercase tracking-wider">Owed to You</p>
+                  <h3 className="text-3xl font-bold text-success">₹{totalOwedToYou}</h3>
+                </div>
+                <div className="p-2.5 bg-success/10 rounded-xl text-success">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
               </div>
-              <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600">
-                <TrendingUp className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="mt-4 text-xs text-slate-500">Total payments you should receive</div>
-          </div>
+            </CardContent>
+          </Card>
 
-          {/* You Owe */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm relative overflow-hidden flex flex-col justify-between">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">You owe</p>
-                <h3 className="text-2xl font-extrabold text-rose-600 mt-1">₹{totalYouOwe}</h3>
+          <Card className="hover:shadow-md transition-shadow duration-200 border-border/60">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-textSecondary uppercase tracking-wider">You Owe</p>
+                  <h3 className="text-3xl font-bold text-destructive">₹{totalYouOwe}</h3>
+                </div>
+                <div className="p-2.5 bg-destructive/10 rounded-xl text-destructive">
+                  <TrendingDown className="h-5 w-5" />
+                </div>
               </div>
-              <div className="rounded-lg bg-rose-50 p-2 text-rose-600">
-                <TrendingDown className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="mt-4 text-xs text-slate-500">Total payments you need to settle</div>
-          </div>
+            </CardContent>
+          </Card>
 
-          {/* Net Balance */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm relative overflow-hidden flex flex-col justify-between">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Net balance</p>
-                <h3 className={`text-2xl font-extrabold mt-1 ${netOverall >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {netOverall >= 0 ? `₹${netOverall}` : `-₹${Math.abs(netOverall)}`}
-                </h3>
+          <Card className="hover:shadow-md transition-shadow duration-200 border-border/60">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-textSecondary uppercase tracking-wider">Net Balance</p>
+                  <h3 className={`text-3xl font-bold ${netOverall >= 0 ? 'text-primary' : 'text-destructive'}`}>
+                    {netOverall >= 0 ? `₹${netOverall}` : `-₹${Math.abs(netOverall)}`}
+                  </h3>
+                </div>
+                <div className="p-2.5 bg-primary/10 rounded-xl text-primary">
+                  <Wallet className="h-5 w-5" />
+                </div>
               </div>
-              <div className={`rounded-lg p-2 ${netOverall >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                <Wallet className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="mt-4 text-xs text-slate-500">Your total financial standing</div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Pending Approvals Panel */}
+        {/* Pending Approvals Section */}
         {pendingApprovals.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-            <div className="border-b border-slate-200/80 px-6 py-4 flex justify-between items-center bg-amber-50/20">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500 animate-pulse" />
-                Pending Import Approvals ({pendingApprovals.length})
-              </h2>
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-4">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              <h2 className="text-lg font-bold text-textPrimary">Pending Approvals ({pendingApprovals.length})</h2>
             </div>
-            <div className="p-4 divide-y divide-slate-100 max-h-96 overflow-y-auto">
+            <div className="grid gap-4">
               {pendingApprovals.map((appr) => (
-                <div key={appr.id} className="py-4 first:pt-0 last:pb-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 border border-amber-200">
-                        {appr.anomalyType}
-                      </span>
-                      <span className="text-xs text-slate-400 font-semibold">Row {appr.rowNumber}</span>
-                      <span className="text-xs text-slate-400">Group Name: <span className="font-semibold text-slate-700">{appr.groupName}</span></span>
-                    </div>
-                    <p className="text-sm font-bold text-slate-900">{appr.description || '(No Description)'}</p>
-                    <p className="text-xs text-slate-500">
-                      Payer: <span className="font-semibold text-slate-600">{appr.payerEmail}</span> • 
-                      Amount: <span className="font-bold text-slate-700">{appr.originalCurrency === 'USD' ? `$${appr.originalAmount}` : `₹${appr.originalAmount}`}</span>
-                      {appr.originalCurrency === 'USD' && ` (Converted: ₹${appr.convertedAmount})`}
-                    </p>
-                    {appr.splitsJson && (
-                      <p className="text-[11px] text-slate-400">
-                        Participants: {JSON.parse(appr.splitsJson).map(s => `${s.email} (${appr.originalCurrency === 'USD' ? `$${s.splitValue}` : `₹${s.splitValue}`})`).join(', ')}
+                <Card key={appr.id} className="border-border">
+                  <CardContent className="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">{appr.anomalyType}</Badge>
+                        <span className="text-xs text-textSecondary font-medium">Row {appr.rowNumber}</span>
+                        <span className="text-xs text-textSecondary px-2 py-0.5 bg-muted rounded">Group: {appr.groupName}</span>
+                      </div>
+                      <p className="text-sm font-semibold text-textPrimary">{appr.description}</p>
+                      <p className="text-xs text-textSecondary">
+                        Payer: {appr.payerEmail} • Amount: {appr.originalCurrency === 'USD' ? `$${appr.originalAmount}` : `₹${appr.originalAmount}`}
                       </p>
-                    )}
-                  </div>
-                  <div className="flex gap-2 w-full md:w-auto shrink-0">
-                    <button
-                      onClick={() => handleApproveAction(appr.id, 'REJECT')}
-                      className="flex-1 md:flex-none flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 px-3.5 py-2 text-xs font-bold transition-all"
-                    >
-                      Reject
-                    </button>
-                    <button
-                      onClick={() => handleApproveAction(appr.id, 'APPROVE')}
-                      className="flex-1 md:flex-none flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-bold shadow-sm shadow-emerald-600/10 transition-all"
-                    >
-                      Approve
-                    </button>
-                  </div>
-                </div>
+                    </div>
+                    <div className="flex items-center gap-2 w-full md:w-auto">
+                      <Button variant="outline" size="sm" className="w-full md:w-auto" onClick={() => handleApproveAction(appr.id, 'REJECT')}>Reject</Button>
+                      <Button size="sm" className="w-full md:w-auto bg-success hover:bg-success/90 text-white" onClick={() => handleApproveAction(appr.id, 'APPROVE')}>Approve</Button>
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           </div>
         )}
 
-        {/* Groups List section */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-          <div className="border-b border-slate-200/80 px-6 py-4 flex justify-between items-center bg-slate-50/50">
-            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              <Users className="h-5 w-5 text-slate-400" />
-              Your Groups ({groups.length})
-            </h2>
+        {/* Groups Section */}
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-textPrimary">Your Groups</h2>
+              <Badge variant="secondary" className="bg-muted text-textSecondary font-semibold">
+                {groups.length}
+              </Badge>
+            </div>
           </div>
 
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-3">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent"></div>
-              <p className="text-sm font-medium text-slate-400">Loading your groups...</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3].map(i => (
+                <Card key={i} className="border-border shadow-none h-[120px] animate-pulse bg-muted/40" />
+              ))}
             </div>
           ) : groups.length === 0 ? (
-            <div className="text-center py-16 px-4">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
-                <Users className="h-6 w-6" />
-              </div>
-              <h3 className="mt-4 text-sm font-semibold text-slate-900">No groups found</h3>
-              <p className="mt-1 text-sm text-slate-500">Get started by creating a new group with your friends</p>
-              <button
-                onClick={() => setShowModal(true)}
-                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition-all shadow-sm"
-              >
-                <Plus className="h-4 w-4" />
-                Create Group
-              </button>
-            </div>
+            <Card className="border-dashed border-border border-2 bg-transparent shadow-none">
+              <CardContent className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <Users className="h-6 w-6 text-textSecondary" />
+                </div>
+                <h3 className="text-lg font-bold text-textPrimary mb-1">No groups yet</h3>
+                <p className="text-sm text-textSecondary mb-6 max-w-sm">
+                  Create a group to start tracking expenses with your friends, roommates, or travel buddies.
+                </p>
+                <Button onClick={() => setShowGroupModal(true)} className="bg-primary hover:bg-primary-hover text-white">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Your First Group
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {groups.map((group) => (
-                <div
-                  key={group.id}
+                <Card 
+                  key={group.id} 
+                  className="group cursor-pointer hover:shadow-md hover:border-primary/30 transition-all duration-200 border-border/80 overflow-hidden relative"
                   onClick={() => navigate(`/group/${group.id}`)}
-                  className="flex items-center justify-between p-6 hover:bg-slate-50/50 cursor-pointer transition-all group"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 font-semibold group-hover:scale-105 transition-transform">
-                      {group.name.substring(0, 2).toUpperCase()}
+                  <div className="absolute top-0 left-0 w-1 h-full bg-primary scale-y-0 group-hover:scale-y-100 origin-bottom transition-transform duration-300" />
+                  <CardContent className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                        {group.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <ArrowUpRight className="h-4 w-4 text-textSecondary opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-slate-950 group-hover:text-emerald-700 transition-colors">
-                        {group.name}
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Created by {group.creator.id === user.id ? 'You' : group.creator.name} • {group.membersCount} members
-                      </p>
+                      <h3 className="font-bold text-textPrimary text-lg mb-1 truncate">{group.name}</h3>
+                      <div className="flex items-center gap-3 text-xs text-textSecondary">
+                        <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {group.membersCount} members</span>
+                        <span>•</span>
+                        <span className="truncate">By {group.creator.id === user.id ? 'You' : group.creator.name}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                      View details
-                    </span>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}
         </div>
-      </main>
-
-      {/* Create Group Modal Overlay */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200/80 shadow-2xl p-6 relative animate-in fade-in-50 zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Create New Group</h3>
-            
-            <form onSubmit={handleCreateGroup} className="space-y-4">
-              {modalError && (
-                <div className="rounded-lg bg-red-50 p-3 text-sm font-medium text-red-600 border border-red-100">
-                  {modalError}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Group Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Goa Trip 2026, Roommates"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  className="block w-full rounded-xl border border-slate-200 bg-white py-3 px-3.5 text-slate-950 placeholder-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none sm:text-sm transition-all"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowModal(false);
-                    setNewGroupName('');
-                    setModalError('');
-                  }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-emerald-400 shadow-md shadow-emerald-600/10 transition-all"
-                >
-                  {creating ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  ) : (
-                    'Create'
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CSV Import Modal Overlay */}
-      {showImportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl bg-white rounded-2xl border border-slate-200/80 shadow-2xl p-6 relative max-h-[85vh] flex flex-col animate-in fade-in-50 zoom-in-95 duration-200">
-            <button
-              onClick={() => {
-                setShowImportModal(false);
-                setSelectedFile(null);
-                setImportReport(null);
-                setImportError('');
-              }}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <h3 className="text-xl font-bold text-slate-900 pr-8">Import Expenses from CSV</h3>
-            <p className="text-xs text-slate-400 mt-1">Upload a Splitwise-formatted CSV file to batch-import group expenses with real-time validation.</p>
-
-            <div className="flex-1 overflow-y-auto mt-4 pr-1 space-y-4">
-              {importError && (
-                <div className="rounded-xl bg-red-50 p-4 text-sm font-medium text-red-600 border border-red-100 flex items-start gap-2">
-                  <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-                  <div>{importError}</div>
-                </div>
-              )}
-
-              {!importReport ? (
-                <form onSubmit={handleCSVImport} className="space-y-4">
-                  <div className="border-2 border-dashed border-slate-200 hover:border-emerald-500 rounded-2xl p-8 text-center bg-slate-50/50 hover:bg-emerald-50/5 cursor-pointer transition-all relative">
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={handleFileChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                    <UploadCloud className="mx-auto h-12 w-12 text-slate-400 mb-3" />
-                    <span className="block text-sm font-semibold text-slate-900">
-                      {selectedFile ? selectedFile.name : 'Select or drag your CSV file'}
-                    </span>
-                    <span className="block text-xs text-slate-400 mt-1">
-                      {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Supports standard .csv file format'}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-end gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowImportModal(false);
-                        setSelectedFile(null);
-                        setImportError('');
-                      }}
-                      className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={uploading || !selectedFile}
-                      className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-emerald-300 disabled:cursor-not-allowed shadow-md shadow-emerald-600/10 transition-all"
-                    >
-                      {uploading ? (
-                        <>
-                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                          Processing Import...
-                        </>
-                      ) : (
-                        'Upload and Import'
-                      )}
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="space-y-5">
-                  {/* Status Summary Banner */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/50 text-center">
-                      <span className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Run Status</span>
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold mt-1 border ${
-                        importReport.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        importReport.status === 'PARTIAL' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                        'bg-rose-50 text-rose-700 border-rose-200'
-                      }`}>
-                        {importReport.status}
-                      </span>
-                    </div>
-
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/50 text-center">
-                      <span className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Anomalies</span>
-                      <span className="block text-xl font-black text-slate-900 mt-0.5">
-                        {importReport.statistics.totalAnomalies}
-                      </span>
-                    </div>
-
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/50 text-center">
-                      <span className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Skipped Rows</span>
-                      <span className="block text-xl font-black text-rose-600 mt-0.5">
-                        {importReport.statistics.skippedRowsCount}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Anomalies Table */}
-                  <div className="border border-slate-200/80 rounded-xl overflow-hidden bg-white">
-                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-200/85">
-                      <h4 className="text-sm font-bold text-slate-900">Validation Logs & Anomalies</h4>
-                    </div>
-
-                    {importReport.anomalies.length === 0 ? (
-                      <div className="p-8 text-center text-slate-500">
-                        <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500 mb-2" />
-                        <p className="text-sm font-semibold text-slate-950">Zero Anomalies Detected!</p>
-                        <p className="text-xs text-slate-400 mt-0.5">All expenses were successfully validated and imported.</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto max-h-[30vh]">
-                        <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
-                          <thead className="bg-slate-50/50 text-slate-500 font-semibold sticky top-0 border-b border-slate-100 backdrop-blur-md">
-                            <tr>
-                              <th className="px-4 py-2.5">Row</th>
-                              <th className="px-4 py-2.5">Anomaly Type</th>
-                              <th className="px-4 py-2.5">Issue Description</th>
-                              <th className="px-4 py-2.5">Action Taken</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 text-slate-750">
-                            {importReport.anomalies.map((anomaly) => (
-                              <tr key={anomaly.id} className="hover:bg-slate-50/40">
-                                <td className="px-4 py-2.5 font-semibold text-slate-900">{anomaly.rowNumber}</td>
-                                <td className="px-4 py-2.5 font-medium">
-                                  <span className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 font-bold text-[10px] text-slate-700 border border-slate-200/50">
-                                    {anomaly.anomalyType}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-2.5 text-slate-500">{anomaly.description}</td>
-                                <td className="px-4 py-2.5 font-medium">
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
-                                    anomaly.actionTaken === 'Skipped Row' || anomaly.actionTaken === 'Aborted Import'
-                                      ? 'bg-rose-50 text-rose-700 border-rose-200/50'
-                                      : 'bg-amber-50 text-amber-700 border-amber-200/50'
-                                  }`}>
-                                    {anomaly.actionTaken}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end pt-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={handleDownloadReport}
-                      className="rounded-xl bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2.5 text-sm font-semibold transition-all shadow-sm"
-                    >
-                      Download Import Report
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowImportModal(false);
-                        setSelectedFile(null);
-                        setImportReport(null);
-                        setImportError('');
-                      }}
-                      className="rounded-xl bg-slate-900 hover:bg-slate-800 px-5 py-2.5 text-sm font-semibold text-white transition-all shadow-md"
-                    >
-                      Done & Refresh
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
+    </DashboardLayout>
   );
 };
 
