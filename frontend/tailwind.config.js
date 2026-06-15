@@ -12,6 +12,7 @@ export default {
       },
       colors: {
         background: '#F8FAFC',
+        foreground: '#0F172A',
         surface: '#FFFFFF',
         border: '#E2E8F0',
         primary: {
@@ -35,6 +36,20 @@ export default {
         },
         textPrimary: '#0F172A',
         textSecondary: '#64748B',
+        ring: '#7C3AED',
+        input: '#E2E8F0',
+        popover: {
+          DEFAULT: '#FFFFFF',
+          foreground: '#0F172A',
+        },
+        secondary: {
+          DEFAULT: '#F1F5F9',
+          foreground: '#0F172A',
+        },
+        accent: {
+          DEFAULT: '#F1F5F9',
+          foreground: '#0F172A',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
