@@ -1,29 +1,33 @@
-const express = require("express");
-const multer = require("multer");
-const fs = require("fs");
-const { verifyToken } = require("../middleware/authMiddleware");
-const { uploadCsv, getBatchReview, resolveAnomaly, commitBatch } = require("../controllers/importController");
+const express = require('express');
+const multer = require('multer');
+const { importCSV, fetchReport, fetchPendingApprovals, actionApproval } = require('../controllers/importController');
+const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Ensure uploads directory exists
-const uploadDir = "./uploads";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+// Configure multer for memory storage
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    // Accept only CSV files
+    if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV files are allowed'), false);
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
 
-const upload = multer({ dest: uploadDir });
+// All import routes are protected by JWT authentication
+router.use(protect);
 
-router.use(verifyToken);
-
-// This will be mounted under /api/imports, but we also mount an endpoint in groupRoutes
-// To fetch a specific batch review:
-router.get("/batches/:batchId/review", getBatchReview);
-
-// Resolve an anomaly
-router.post("/batches/:batchId/anomalies/:anomalyId/resolve", resolveAnomaly);
-
-// Commit the final batch
-router.post("/batches/:batchId/commit", commitBatch);
+router.post('/csv', upload.single('file'), importCSV);
+router.get('/report/:id', fetchReport);
+router.get('/approvals', fetchPendingApprovals);
+router.post('/approvals/:id/action', actionApproval);
 
 module.exports = router;

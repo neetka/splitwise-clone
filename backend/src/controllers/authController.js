@@ -1,198 +1,138 @@
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const prisma = require("../config/prisma");
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const prisma = require('../config/prisma');
 
-// Email regex helper
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const generateToken = (id) => {
+  return jwt.sign(
+    { id },
+    process.env.JWT_SECRET || 'splitwise_clone_jwt_secret_key_change_me_in_production',
+    { expiresIn: '30d' }
+  );
+};
 
-const register = async (req, res) => {
+// @desc    Register a new user
+// @route   POST /api/auth/register
+// @access  Public
+const register = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const { email, password, name } = req.body;
 
-    // 1. Validation
-    if (!name || !email || !password) {
+    if (!email || !password || !name) {
       return res.status(400).json({
         success: false,
-        message: "Name, email, and password are required.",
-        code: "VALIDATION_ERROR",
+        message: 'Please provide email, password, and name',
       });
     }
 
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!emailRegex.test(trimmedEmail)) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid email format.",
-        code: "VALIDATION_ERROR",
+        message: 'Please provide a valid email address',
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        message: "Password must be at least 6 characters long.",
-        code: "VALIDATION_ERROR",
+        message: 'Password must be at least 6 characters long',
       });
     }
 
-    // 2. Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: trimmedEmail },
+    const userExists = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
     });
 
-    if (existingUser) {
-      return res.status(409).json({
+    if (userExists) {
+      return res.status(400).json({
         success: false,
-        message: "A user with this email address already exists.",
-        code: "EMAIL_ALREADY_EXISTS",
+        message: 'User already exists with this email',
       });
     }
 
-    // 3. Hash password
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // 4. Create user in DB
     const user = await prisma.user.create({
       data: {
-        name: name.trim(),
-        email: trimmedEmail,
+        email: email.toLowerCase().trim(),
         passwordHash,
+        name: name.trim(),
       },
     });
 
-    // 5. Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, name: user.name },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    // 6. Return response
     return res.status(201).json({
       success: true,
-      message: "Registration successful.",
       data: {
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-        },
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        token: generateToken(user.id),
       },
     });
   } catch (error) {
-    console.error("Register Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred during registration.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
+    next(error);
   }
 };
 
-const login = async (req, res) => {
+// @desc    Authenticate user & get token
+// @route   POST /api/auth/login
+// @access  Public
+const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    // 1. Validation
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required.",
-        code: "VALIDATION_ERROR",
+        message: 'Please provide email and password',
       });
     }
 
-    const trimmedEmail = email.trim().toLowerCase();
-
-    // 2. Find user in DB
     const user = await prisma.user.findUnique({
-      where: { email: trimmedEmail },
+      where: { email: email.toLowerCase().trim() },
     });
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
-        code: "INVALID_CREDENTIALS",
+        message: 'Invalid email or password',
       });
     }
 
-    // 3. Verify password
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
-        code: "INVALID_CREDENTIALS",
+        message: 'Invalid email or password',
       });
     }
 
-    // 4. Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, name: user.name },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    // 5. Return response
     return res.status(200).json({
       success: true,
-      message: "Login successful.",
       data: {
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-        },
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        token: generateToken(user.id),
       },
     });
   } catch (error) {
-    console.error("Login Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred during login.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
+    next(error);
   }
 };
 
-const getMe = async (req, res) => {
+// @desc    Get current logged in user details
+// @route   GET /api/auth/me
+// @access  Private
+const getMe = async (req, res, next) => {
   try {
-    // req.user is set by the verification middleware
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        createdAt: true,
-      },
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found.",
-        code: "USER_NOT_FOUND",
-      });
-    }
-
     return res.status(200).json({
       success: true,
-      data: {
-        user,
-      },
+      data: req.user,
     });
   } catch (error) {
-    console.error("GetMe Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
+    next(error);
   }
 };
 

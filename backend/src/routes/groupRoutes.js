@@ -1,66 +1,28 @@
-const express = require("express");
-const router = express.Router();
-
-const { verifyToken } = require("../middleware/authMiddleware");
-const {
-  requireGroupMember,
-  requireActiveGroupMember,
-  requireGroupAdmin,
-} = require("../middleware/groupMiddleware");
-
+const express = require('express');
 const {
   createGroup,
-  getGroups,
-  getGroupById,
-  updateGroup,
-  deleteGroup,
+  listGroups,
+  getGroupDetails,
   addMember,
   removeMember,
-} = require("../controllers/groupController");
+} = require('../controllers/groupController');
+const { protect } = require('../middleware/authMiddleware');
 
-const { getGroupExpenses } = require("../controllers/expenseController");
-const { getGroupBalances } = require("../controllers/balanceController");
-const { getGroupSettlements } = require("../controllers/settlementController");
-const { uploadCsv } = require("../controllers/importController");
-const multer = require("multer");
+const router = express.Router();
 
-const uploadDir = "./uploads";
-const upload = multer({ dest: uploadDir });
+router.use(protect); // Protect all group routes
 
-// Apply authentication token verification to all group routes
-router.use(verifyToken);
+router.route('/')
+  .post(createGroup)
+  .get(listGroups);
 
-// Create a new group: POST /api/groups
-router.post("/", createGroup);
+router.route('/:id')
+  .get(getGroupDetails);
 
-// Get groups the authenticated user belongs to: GET /api/groups
-router.get("/", getGroups);
+router.route('/:id/members')
+  .post(addMember);
 
-// Get detailed information of a group: GET /api/groups/:id
-router.get("/:id", requireGroupMember, getGroupById);
-
-// Get all expenses for a group: GET /api/groups/:id/expenses
-router.get("/:id/expenses", requireGroupMember, getGroupExpenses);
-
-// Upload CSV for a group: POST /api/groups/:id/imports
-router.post("/:id/imports", requireActiveGroupMember, upload.single("file"), uploadCsv);
-
-// Get calculated balances for a group: GET /api/groups/:id/balances
-router.get("/:id/balances", requireGroupMember, getGroupBalances);
-
-// Get all settlements for a group: GET /api/groups/:id/settlements
-router.get("/:id/settlements", requireGroupMember, getGroupSettlements);
-
-// Update a group details: PUT /api/groups/:id
-router.put("/:id", requireGroupAdmin, updateGroup);
-
-// Delete a group: DELETE /api/groups/:id
-router.delete("/:id", requireGroupAdmin, deleteGroup);
-
-// Add a member to a group: POST /api/groups/:id/members
-router.post("/:id/members", requireActiveGroupMember, addMember);
-
-// Remove (soft-delete) a member from a group: DELETE /api/groups/:id/members/:memberId
-router.delete("/:id/members/:memberId", requireGroupAdmin, removeMember);
+router.route('/:id/members/:userId')
+  .delete(removeMember);
 
 module.exports = router;

@@ -1,110 +1,137 @@
-const prisma = require("../config/prisma");
-const { aggregateBalances } = require("../utils/balanceEngine");
+const prisma = require('../config/prisma');
 
-exports.createSettlement = async (req, res, next) => {
+// @desc    Record a manual settlement payment between group members
+// @route   POST /api/settlements
+// @access  Private
+const createSettlement = async (req, res, next) => {
   try {
-    const { groupId, receiverId, amount, currency, date } = req.body;
-    const payerId = req.user.userId;
+    const { groupId, senderId, receiverId, amount } = req.body;
 
-    if (!groupId || !receiverId || !amount || !currency) {
-      return res.status(400).json({ error: "Missing required settlement fields." });
-    }
-
-    if (payerId === receiverId) {
-      return res.status(400).json({ error: "Payer and receiver cannot be the same user." });
-    }
-
-    const amountNum = Number(amount);
-    if (amountNum <= 0) {
-      return res.status(400).json({ error: "Settlement amount must be positive." });
-    }
-
-    // 1. Verify both users are members of the group
-    const memberships = await prisma.groupMembership.findMany({
-      where: { groupId, userId: { in: [payerId, receiverId] } }
-    });
-    
-    if (memberships.length !== 2) {
-      return res.status(400).json({ error: "Both users must belong to the group." });
-    }
-
-    // 2. Prevent over-settlement by running the dynamic balance engine
-    const expenses = await prisma.expense.findMany({ where: { groupId }, include: { splits: true } });
-    const settlements = await prisma.settlement.findMany({ where: { groupId } });
-    
-    const peerBalances = aggregateBalances(expenses, settlements);
-    
-    // Check the specific graph edge representing what the payer owes this receiver
-    const exactDebt = peerBalances.find(p => p.debtorId === payerId && p.creditorId === receiverId);
-    const owedAmount = exactDebt ? exactDebt.amount : 0;
-
-    if (amountNum > owedAmount) {
-      return res.status(400).json({ 
-        error: `Cannot over-settle. You currently owe ${owedAmount} to this user.` 
+    if (!groupId || !senderId || !receiverId || !amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields (groupId, senderId, receiverId, amount)',
       });
     }
 
-    // 3. Create the settlement
+    const payAmount = Number(amount);
+    if (isNaN(payAmount) || payAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount must be a positive number',
+      });
+    }
+
+    if (senderId === receiverId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sender and receiver cannot be the same user',
+      });
+    }
+
+    // Verify group exists
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      include: { members: true },
+    });
+
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found',
+      });
+    }
+
+    // Verify requesting user is a member of the group
+    const isRequesterMember = group.members.some(m => m.userId === req.user.id);
+    if (!isRequesterMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: You must be a member of this group to record settlements',
+      });
+    }
+
+    // Verify sender and receiver are members
+    const isSenderMember = group.members.some(m => m.userId === senderId);
+    const isReceiverMember = group.members.some(m => m.userId === receiverId);
+
+    if (!isSenderMember || !isReceiverMember) {
+      return res.status(400).json({
+        success: false,
+        message: 'Both sender and receiver must be members of the group',
+      });
+    }
+
+    // Record settlement
     const settlement = await prisma.settlement.create({
       data: {
         groupId,
-        payerId,
+        senderId,
         receiverId,
-        amount: amountNum,
-        currency,
-        date: date ? new Date(date) : new Date()
+        amount: payAmount,
       },
       include: {
-        payer: { select: { id: true, name: true, email: true } },
-        receiver: { select: { id: true, name: true, email: true } }
-      }
+        sender: { select: { id: true, name: true, email: true } },
+        receiver: { select: { id: true, name: true, email: true } },
+      },
     });
 
-    res.status(201).json({ message: "Settlement created successfully.", data: settlement });
+    return res.status(201).json({
+      success: true,
+      data: settlement,
+    });
   } catch (error) {
     next(error);
   }
 };
 
-exports.getGroupSettlements = async (req, res, next) => {
+// @desc    Get settlement history for a group
+// @route   GET /api/settlements/group/:groupId
+// @access  Private
+const getGroupSettlements = async (req, res, next) => {
   try {
-    const groupId = req.params.id;
+    const { groupId } = req.params;
+
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      include: { members: true },
+    });
+
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found',
+      });
+    }
+
+    // Verify requesting user is a member
+    const isMember = group.members.some(m => m.userId === req.user.id);
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: You are not a member of this group',
+      });
+    }
+
     const settlements = await prisma.settlement.findMany({
       where: { groupId },
+      orderBy: { createdAt: 'desc' },
       include: {
-        payer: { select: { id: true, name: true, email: true } },
-        receiver: { select: { id: true, name: true, email: true } }
+        sender: { select: { id: true, name: true, email: true } },
+        receiver: { select: { id: true, name: true, email: true } },
       },
-      orderBy: { date: 'desc' }
     });
 
-    res.status(200).json({ data: settlements });
+    return res.status(200).json({
+      success: true,
+      data: settlements,
+    });
   } catch (error) {
     next(error);
   }
 };
 
-exports.getMySettlements = async (req, res, next) => {
-  try {
-    const userId = req.user.userId;
-
-    const settlements = await prisma.settlement.findMany({
-      where: {
-        OR: [
-          { payerId: userId },
-          { receiverId: userId }
-        ]
-      },
-      include: {
-        group: { select: { id: true, name: true } },
-        payer: { select: { id: true, name: true, email: true } },
-        receiver: { select: { id: true, name: true, email: true } }
-      },
-      orderBy: { date: 'desc' }
-    });
-
-    res.status(200).json({ data: settlements });
-  } catch (error) {
-    next(error);
-  }
+module.exports = {
+  createSettlement,
+  getGroupSettlements,
 };

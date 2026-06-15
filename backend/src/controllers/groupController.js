@@ -1,145 +1,181 @@
-const prisma = require("../config/prisma");
+const prisma = require('../config/prisma');
 
-// Email regex helper
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const calculateSettlements = (memberBalances) => {
+  const balances = memberBalances.map(b => ({
+    userId: b.userId,
+    name: b.name,
+    netBalance: b.netBalance
+  }));
 
-// Helper to construct a name from an email prefix
-const getNameFromEmail = (email) => {
-  const prefix = email.split("@")[0];
-  // Capitalize words and replace common separators with spaces
-  return prefix
-    .split(/[._-]/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-};
+  const debtors = balances.filter(b => b.netBalance < -0.01).sort((a, b) => a.netBalance - b.netBalance);
+  const creditors = balances.filter(b => b.netBalance > 0.01).sort((a, b) => b.netBalance - a.netBalance);
 
-// 1. Create Group: POST /api/groups
-const createGroup = async (req, res) => {
-  try {
-    const { name } = req.body;
-    const userId = req.user.userId;
+  const simplified = [];
 
-    if (!name || typeof name !== "string" || name.trim() === "") {
-      return res.status(400).json({
-        success: false,
-        message: "Group name is required.",
-        code: "VALIDATION_ERROR",
+  let dIdx = 0;
+  let cIdx = 0;
+
+  while (dIdx < debtors.length && cIdx < creditors.length) {
+    const debtor = debtors[dIdx];
+    const creditor = creditors[cIdx];
+
+    const oweAmount = Math.abs(debtor.netBalance);
+    const receiveAmount = creditor.netBalance;
+
+    const settledAmount = Number(Math.min(oweAmount, receiveAmount).toFixed(2));
+
+    if (settledAmount > 0.01) {
+      simplified.push({
+        fromUserId: debtor.userId,
+        fromName: debtor.name,
+        toUserId: creditor.userId,
+        toName: creditor.name,
+        amount: settledAmount
       });
     }
 
-    // Use a transaction to ensure both group creation and membership creation succeed together
-    const result = await prisma.$transaction(async (tx) => {
-      const group = await tx.group.create({
+    debtor.netBalance = Number((debtor.netBalance + settledAmount).toFixed(2));
+    creditor.netBalance = Number((creditor.netBalance - settledAmount).toFixed(2));
+
+    if (Math.abs(debtor.netBalance) < 0.01) {
+      dIdx++;
+    }
+    if (Math.abs(creditor.netBalance) < 0.01) {
+      cIdx++;
+    }
+  }
+
+  return simplified;
+};
+
+// @desc    Create a new group
+// @route   POST /api/groups
+// @access  Private
+const createGroup = async (req, res, next) => {
+  try {
+    const { name } = req.body;
+
+    if (!name || name.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Group name is required',
+      });
+    }
+
+    // Run transaction to create group and add creator as a member
+    const group = await prisma.$transaction(async (tx) => {
+      const newGroup = await tx.group.create({
         data: {
           name: name.trim(),
+          creatorId: req.user.id,
         },
       });
 
-      const membership = await tx.groupMembership.create({
+      await tx.groupMember.create({
         data: {
-          groupId: group.id,
-          userId: userId,
-          isActive: true,
-          isAdmin: true,
+          groupId: newGroup.id,
+          userId: req.user.id,
         },
       });
 
-      return { group, membership };
+      return newGroup;
     });
 
     return res.status(201).json({
       success: true,
-      message: "Group created successfully.",
-      data: {
-        group: result.group,
-        membership: {
-          id: result.membership.id,
-          userId: result.membership.userId,
-          groupId: result.membership.groupId,
-          isActive: result.membership.isActive,
-          isAdmin: result.membership.isAdmin,
-          joinedAt: result.membership.joinedAt,
-        },
-      },
+      data: group,
     });
   } catch (error) {
-    console.error("Create Group Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred during group creation.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
+    next(error);
   }
 };
 
-// 2. Get User's Groups: GET /api/groups
-const getGroups = async (req, res) => {
+// @desc    List all groups of the logged-in user
+// @route   GET /api/groups
+// @access  Private
+const listGroups = async (req, res, next) => {
   try {
-    const userId = req.user.userId;
-
-    const memberships = await prisma.groupMembership.findMany({
-      where: { userId },
+    const memberships = await prisma.groupMember.findMany({
+      where: { userId: req.user.id },
       include: {
         group: {
-          select: {
-            id: true,
-            name: true,
-            createdAt: true,
-            updatedAt: true,
+          include: {
+            creator: {
+              select: { id: true, name: true, email: true },
+            },
+            members: {
+              include: {
+                user: {
+                  select: { id: true, name: true, email: true },
+                },
+              },
+            },
           },
         },
       },
-      orderBy: {
-        joinedAt: "desc",
-      },
     });
 
-    const groups = memberships.map((membership) => ({
-      id: membership.group.id,
-      name: membership.group.name,
-      createdAt: membership.group.createdAt,
-      updatedAt: membership.group.updatedAt,
-      membership: {
-        isActive: membership.isActive,
-        isAdmin: membership.isAdmin,
-        joinedAt: membership.joinedAt,
-        leftAt: membership.leftAt,
-      },
-    }));
+    const groups = memberships.map((membership) => {
+      const g = membership.group;
+      return {
+        id: g.id,
+        name: g.name,
+        creator: g.creator,
+        membersCount: g.members.length,
+        createdAt: g.createdAt,
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      data: {
-        groups,
-      },
+      data: groups,
     });
   } catch (error) {
-    console.error("Get Groups Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred while retrieving groups.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
+    next(error);
   }
 };
 
-// 3. Get Group Details: GET /api/groups/:id
-const getGroupById = async (req, res) => {
+// @desc    Get group details, members, expenses, and current balances
+// @route   GET /api/groups/:id
+// @access  Private
+const getGroupDetails = async (req, res, next) => {
   try {
     const groupId = req.params.id;
 
+    // Check if group exists
     const group = await prisma.group.findUnique({
       where: { id: groupId },
       include: {
-        memberships: {
+        creator: {
+          select: { id: true, name: true, email: true },
+        },
+        members: {
           include: {
             user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
+              select: { id: true, name: true, email: true },
+            },
+          },
+        },
+        expenses: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            paidBy: {
+              select: { id: true, name: true, email: true },
+            },
+            splits: {
+              include: {
+                user: {
+                  select: { id: true, name: true, email: true },
+                },
               },
             },
+          },
+        },
+        settlements: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            sender: { select: { id: true, name: true, email: true } },
+            receiver: { select: { id: true, name: true, email: true } },
           },
         },
       },
@@ -148,215 +184,310 @@ const getGroupById = async (req, res) => {
     if (!group) {
       return res.status(404).json({
         success: false,
-        message: "Group not found.",
-        code: "GROUP_NOT_FOUND",
+        message: 'Group not found',
       });
     }
 
-    const members = group.memberships.map((m) => ({
-      id: m.user.id,
-      name: m.user.name,
-      email: m.user.email,
-      isActive: m.isActive,
-      isAdmin: m.isAdmin,
-      joinedAt: m.joinedAt,
-      leftAt: m.leftAt,
-    }));
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        group: {
-          id: group.id,
-          name: group.name,
-          createdAt: group.createdAt,
-          updatedAt: group.updatedAt,
-          members,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Get Group Detail Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred while retrieving group details.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
-  }
-};
-
-// 4. Update Group: PUT /api/groups/:id
-const updateGroup = async (req, res) => {
-  try {
-    const groupId = req.params.id;
-    const { name } = req.body;
-
-    if (!name || typeof name !== "string" || name.trim() === "") {
-      return res.status(400).json({
+    // Verify requesting user is a member of the group
+    const isMember = group.members.some((m) => m.userId === req.user.id);
+    if (!isMember) {
+      return res.status(403).json({
         success: false,
-        message: "Group name is required.",
-        code: "VALIDATION_ERROR",
+        message: 'Access denied: You are not a member of this group',
       });
     }
 
-    const updatedGroup = await prisma.group.update({
-      where: { id: groupId },
-      data: {
-        name: name.trim(),
-      },
+    // DYNAMIC BALANCE CALCULATION FOR GROUP MEMBERS
+    // Initialize structure for each member
+    const balanceMap = {};
+    group.members.forEach((m) => {
+      balanceMap[m.userId] = {
+        userId: m.userId,
+        name: m.user.name,
+        email: m.user.email,
+        isActive: m.isActive,
+        joinedAt: m.joinedAt,
+        leftAt: m.leftAt,
+        paid: 0.0,
+        owed: 0.0,
+        settledSent: 0.0,
+        settledReceived: 0.0,
+        netBalance: 0.0,
+        breakdown: [], // detailed expense breakdown
+      };
     });
+
+    // 1. Process Expenses
+    group.expenses.forEach((expense) => {
+      const payerId = expense.paidById;
+      const amount = Number(expense.amount);
+      const payerName = balanceMap[payerId] ? balanceMap[payerId].name : 'Unknown';
+
+      // Add to payer's total paid if they are in the group member list
+      if (balanceMap[payerId]) {
+        balanceMap[payerId].paid += amount;
+      }
+
+      // Add to each split user's total owed and detailed breakdown
+      const participantsList = expense.splits.map(s => s.user.name).join(', ');
+      expense.splits.forEach((split) => {
+        const splitUserId = split.userId;
+        const splitAmount = Number(split.amount);
+        if (balanceMap[splitUserId]) {
+          balanceMap[splitUserId].owed += splitAmount;
+          balanceMap[splitUserId].breakdown.push({
+            expenseId: expense.id,
+            description: expense.description,
+            amount: amount,
+            date: expense.createdAt,
+            payerName: payerName,
+            participants: participantsList,
+            userShare: splitAmount
+          });
+        }
+      });
+    });
+
+    // 2. Process Settlements
+    group.settlements.forEach((settlement) => {
+      const senderId = settlement.senderId;
+      const receiverId = settlement.receiverId;
+      const amount = Number(settlement.amount);
+
+      if (balanceMap[senderId]) {
+        balanceMap[senderId].settledSent += amount;
+      }
+      if (balanceMap[receiverId]) {
+        balanceMap[receiverId].settledReceived += amount;
+      }
+    });
+
+    // 3. Compute Net Balance
+    // Formula: net = paid - owed + settledSent - settledReceived
+    const balances = Object.values(balanceMap).map((userBalance) => {
+      userBalance.netBalance = Number(
+        (
+          userBalance.paid -
+          userBalance.owed +
+          userBalance.settledSent -
+          userBalance.settledReceived
+        ).toFixed(2)
+      );
+      // Clean up float decimals for display
+      userBalance.paid = Number(userBalance.paid.toFixed(2));
+      userBalance.owed = Number(userBalance.owed.toFixed(2));
+      userBalance.settledSent = Number(userBalance.settledSent.toFixed(2));
+      userBalance.settledReceived = Number(userBalance.settledReceived.toFixed(2));
+      return userBalance;
+    });
+
+    // 4. Compute Simplified Settlements (Who Pays Whom)
+    const simplifiedDebts = calculateSettlements(balances);
 
     return res.status(200).json({
       success: true,
-      message: "Group updated successfully.",
       data: {
-        group: updatedGroup,
+        id: group.id,
+        name: group.name,
+        creator: group.creator,
+        createdAt: group.createdAt,
+        members: group.members.map((m) => ({
+          userId: m.user.id,
+          name: m.user.name,
+          email: m.user.email,
+          joinedAt: m.joinedAt,
+          leftAt: m.leftAt,
+          isActive: m.isActive,
+        })),
+        expenses: group.expenses.map((e) => ({
+          id: e.id,
+          description: e.description,
+          amount: Number(e.amount),
+          originalAmount: Number(e.originalAmount || e.amount),
+          originalCurrency: e.originalCurrency || 'INR',
+          convertedAmount: Number(e.convertedAmount || e.amount),
+          paidBy: e.paidBy,
+          createdAt: e.createdAt,
+          splits: e.splits.map((s) => ({
+            userId: s.userId,
+            userName: s.user.name,
+            amount: Number(s.amount),
+          })),
+        })),
+        balances,
+        simplifiedDebts,
+        settlements: group.settlements,
       },
     });
   } catch (error) {
-    console.error("Update Group Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred during group update.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
+    next(error);
   }
 };
 
-// 5. Delete Group: DELETE /api/groups/:id
-const deleteGroup = async (req, res) => {
-  try {
-    const groupId = req.params.id;
-
-    await prisma.group.delete({
-      where: { id: groupId },
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Group deleted successfully.",
-    });
-  } catch (error) {
-    console.error("Delete Group Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred during group deletion.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
-  }
-};
-
-// 6. Add Member: POST /api/groups/:id/members
-const addMember = async (req, res) => {
+// @desc    Add registered user to group by email
+// @route   POST /api/groups/:id/members
+// @access  Private (Creator Only)
+const addMember = async (req, res, next) => {
   try {
     const groupId = req.params.id;
     const { email } = req.body;
 
-    if (!email || typeof email !== "string" || !emailRegex.test(email.trim().toLowerCase())) {
+    if (!email) {
       return res.status(400).json({
         success: false,
-        message: "A valid email address is required.",
-        code: "VALIDATION_ERROR",
+        message: 'Please provide user email to add',
       });
     }
 
-    const targetEmail = email.trim().toLowerCase();
-
-    // 1. Find or create the user as a stub/placeholder
-    let user = await prisma.user.findUnique({
-      where: { email: targetEmail },
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
     });
 
-    if (!user) {
-      // Create a stub account for the user, which they can claim later
-      const name = getNameFromEmail(targetEmail);
-      user = await prisma.user.create({
-        data: {
-          name,
-          email: targetEmail,
-          passwordHash: "", // Stub password
-        },
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found',
       });
     }
 
-    // 2. Check if membership already exists
-    const existingMembership = await prisma.groupMembership.findUnique({
+    // Only creator is allowed to add members
+    if (group.creatorId !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: Only the group creator can add members',
+      });
+    }
+
+    // Find the user to add
+    const userToAdd = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+    });
+
+    if (!userToAdd) {
+      return res.status(404).json({
+        success: false,
+        message: 'User is not registered on this platform',
+      });
+    }
+
+    // Check if user is already a member (active or soft-deleted)
+    const existingMembership = await prisma.groupMember.findUnique({
       where: {
         groupId_userId: {
           groupId,
-          userId: user.id,
+          userId: userToAdd.id,
         },
       },
     });
 
-    let membership;
     if (existingMembership) {
       if (existingMembership.isActive) {
         return res.status(400).json({
           success: false,
-          message: "User is already an active member of this group.",
-          code: "ALREADY_MEMBER",
+          message: 'User is already a member of this group',
         });
       } else {
-        // User was soft-removed, reactivate them
-        membership = await prisma.groupMembership.update({
-          where: { id: existingMembership.id },
+        // Reactivate soft-deleted member
+        const updatedMember = await prisma.groupMember.update({
+          where: {
+            groupId_userId: {
+              groupId,
+              userId: userToAdd.id,
+            },
+          },
           data: {
             isActive: true,
             leftAt: null,
-            joinedAt: new Date(), // Reset join date to now
+            joinedAt: new Date(),
+          },
+          include: {
+            user: {
+              select: { id: true, name: true, email: true },
+            },
+          },
+        });
+        return res.status(200).json({
+          success: true,
+          message: 'Member re-added successfully',
+          data: {
+            userId: updatedMember.user.id,
+            name: updatedMember.user.name,
+            email: updatedMember.user.email,
+            joinedAt: updatedMember.joinedAt,
           },
         });
       }
-    } else {
-      // Create new membership record
-      membership = await prisma.groupMembership.create({
-        data: {
-          groupId,
-          userId: user.id,
-          isActive: true,
-          isAdmin: false,
-        },
-      });
     }
 
-    return res.status(existingMembership ? 200 : 201).json({
-      success: true,
-      message: existingMembership ? "Member reactivated successfully." : "Member added successfully.",
+    // Add member
+    const newMember = await prisma.groupMember.create({
       data: {
-        membership: {
-          id: membership.id,
-          userId: membership.userId,
-          groupId: membership.groupId,
-          isActive: membership.isActive,
-          isAdmin: membership.isAdmin,
-          joinedAt: membership.joinedAt,
-          leftAt: membership.leftAt,
+        groupId,
+        userId: userToAdd.id,
+      },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true },
         },
       },
     });
-  } catch (error) {
-    console.error("Add Member Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred while adding group member.",
-      code: "INTERNAL_SERVER_ERROR",
+
+    return res.status(201).json({
+      success: true,
+      message: 'Member added successfully',
+      data: {
+        userId: newMember.user.id,
+        name: newMember.user.name,
+        email: newMember.user.email,
+        joinedAt: newMember.joinedAt,
+      },
     });
+  } catch (error) {
+    next(error);
   }
 };
 
-// 7. Remove Member: DELETE /api/groups/:id/members/:memberId
-const removeMember = async (req, res) => {
+// @desc    Remove member from group
+// @route   DELETE /api/groups/:id/members/:userId
+// @access  Private (Creator Only)
+const removeMember = async (req, res, next) => {
   try {
     const groupId = req.params.id;
-    const memberId = req.params.memberId;
+    const userIdToRemove = req.params.userId;
 
-    // Check if membership exists and is active
-    const membership = await prisma.groupMembership.findUnique({
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+    });
+
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found',
+      });
+    }
+
+    // Only creator is allowed to remove members
+    if (group.creatorId !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: Only the group creator can remove members',
+      });
+    }
+
+    // Prevent creator from removing themselves
+    if (userIdToRemove === group.creatorId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Access denied: Cannot remove the group creator',
+      });
+    }
+
+    // Check if target user is actually a member of the group
+    const membership = await prisma.groupMember.findUnique({
       where: {
         groupId_userId: {
           groupId,
-          userId: memberId,
+          userId: userIdToRemove,
         },
       },
     });
@@ -364,22 +495,18 @@ const removeMember = async (req, res) => {
     if (!membership) {
       return res.status(404).json({
         success: false,
-        message: "Group membership record not found.",
-        code: "MEMBERSHIP_NOT_FOUND",
+        message: 'User is not a member of this group',
       });
     }
 
-    if (!membership.isActive) {
-      return res.status(400).json({
-        success: false,
-        message: "User is already inactive/removed from this group.",
-        code: "ALREADY_INACTIVE",
-      });
-    }
-
-    // Soft-remove the member
-    const updatedMembership = await prisma.groupMembership.update({
-      where: { id: membership.id },
+    // Soft delete membership by marking inactive and setting leftAt
+    await prisma.groupMember.update({
+      where: {
+        groupId_userId: {
+          groupId,
+          userId: userIdToRemove,
+        },
+      },
       data: {
         isActive: false,
         leftAt: new Date(),
@@ -388,35 +515,17 @@ const removeMember = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Member removed from group successfully.",
-      data: {
-        membership: {
-          id: updatedMembership.id,
-          userId: updatedMembership.userId,
-          groupId: updatedMembership.groupId,
-          isActive: updatedMembership.isActive,
-          isAdmin: updatedMembership.isAdmin,
-          joinedAt: updatedMembership.joinedAt,
-          leftAt: updatedMembership.leftAt,
-        },
-      },
+      message: 'Member removed successfully',
     });
   } catch (error) {
-    console.error("Remove Member Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "An internal server error occurred while removing group member.",
-      code: "INTERNAL_SERVER_ERROR",
-    });
+    next(error);
   }
 };
 
 module.exports = {
   createGroup,
-  getGroups,
-  getGroupById,
-  updateGroup,
-  deleteGroup,
+  listGroups,
+  getGroupDetails,
   addMember,
   removeMember,
 };

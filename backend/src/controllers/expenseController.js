@@ -1,217 +1,390 @@
-const prisma = require("../config/prisma");
-const { calculateSplits } = require("../utils/splitCalculator");
+const prisma = require('../config/prisma');
 
-exports.createExpense = async (req, res, next) => {
+// Helper to calculate splits and handle rounding adjustments
+const calculateSplits = (totalAmount, splitType, splitsInput) => {
+  const amount = Number(totalAmount);
+  let splits = [];
+  let sumCalculated = 0;
+
+  if (splitType === 'EQUAL') {
+    // splitsInput: Array of userIds or objects with userId
+    const userIds = splitsInput.map(s => typeof s === 'object' ? s.userId : s);
+    const count = userIds.length;
+    if (count === 0) throw new Error('No users specified for equal split');
+
+    const baseShare = Math.floor((amount / count) * 100) / 100;
+    let remainder = Number((amount - (baseShare * count)).toFixed(2));
+
+    userIds.forEach((userId, index) => {
+      // Distribute remainder (in 0.01 increments) to the first few users
+      let userShare = baseShare;
+      if (remainder > 0) {
+        userShare = Number((userShare + 0.01).toFixed(2));
+        remainder = Number((remainder - 0.01).toFixed(2));
+      }
+      splits.push({
+        userId,
+        amount: userShare,
+        splitValue: 1, // Default share factor is 1
+      });
+      sumCalculated += userShare;
+    });
+
+  } else if (splitType === 'UNEQUAL') {
+    // splitsInput: Array of { userId, splitValue } where splitValue is the exact amount they owe
+    let totalInput = 0;
+    splitsInput.forEach(s => {
+      const val = Number(s.splitValue);
+      totalInput = Number((totalInput + val).toFixed(2));
+      splits.push({
+        userId: s.userId,
+        amount: val,
+        splitValue: val,
+      });
+    });
+
+    if (Math.abs(totalInput - amount) > 0.01) {
+      throw new Error(`Sum of unequal splits (${totalInput}) must equal total expense amount (${amount})`);
+    }
+
+    // Adjust any tiny rounding gap (e.g. 0.01) on the last user
+    const diff = Number((amount - totalInput).toFixed(2));
+    if (diff !== 0 && splits.length > 0) {
+      splits[splits.length - 1].amount = Number((splits[splits.length - 1].amount + diff).toFixed(2));
+    }
+
+  } else if (splitType === 'PERCENTAGE') {
+    // splitsInput: Array of { userId, splitValue } where splitValue is the percentage (e.g. 25.5)
+    let totalPercentage = 0;
+    splitsInput.forEach(s => {
+      totalPercentage += Number(s.splitValue);
+    });
+
+    if (Math.abs(totalPercentage - 100) > 0.01) {
+      throw new Error(`Total percentage must equal 100% (got ${totalPercentage}%)`);
+    }
+
+    let calculatedSum = 0;
+    splitsInput.forEach(s => {
+      const pct = Number(s.splitValue);
+      const userShare = Math.round((pct / 100) * amount * 100) / 100;
+      splits.push({
+        userId: s.userId,
+        amount: userShare,
+        splitValue: pct,
+      });
+      calculatedSum = Number((calculatedSum + userShare).toFixed(2));
+    });
+
+    // Adjust rounding remainder on the last user
+    const remainder = Number((amount - calculatedSum).toFixed(2));
+    if (remainder !== 0 && splits.length > 0) {
+      splits[splits.length - 1].amount = Number((splits[splits.length - 1].amount + remainder).toFixed(2));
+    }
+
+  } else if (splitType === 'SHARE') {
+    // splitsInput: Array of { userId, splitValue } where splitValue is the share multiplier (e.g. 2)
+    let totalShares = 0;
+    splitsInput.forEach(s => {
+      totalShares += Number(s.splitValue);
+    });
+
+    if (totalShares <= 0) {
+      throw new Error('Total shares must be greater than 0');
+    }
+
+    let calculatedSum = 0;
+    splitsInput.forEach(s => {
+      const shares = Number(s.splitValue);
+      const userShare = Math.round((shares / totalShares) * amount * 100) / 100;
+      splits.push({
+        userId: s.userId,
+        amount: userShare,
+        splitValue: shares,
+      });
+      calculatedSum = Number((calculatedSum + userShare).toFixed(2));
+    });
+
+    // Adjust rounding remainder on the last user
+    const remainder = Number((amount - calculatedSum).toFixed(2));
+    if (remainder !== 0 && splits.length > 0) {
+      splits[splits.length - 1].amount = Number((splits[splits.length - 1].amount + remainder).toFixed(2));
+    }
+  } else {
+    throw new Error('Invalid split type');
+  }
+
+  return splits;
+};
+
+// @desc    Create an expense with splits
+// @route   POST /api/expenses
+// @access  Private
+const createExpense = async (req, res, next) => {
   try {
-    const { groupId, title, totalAmount, currency, paidByUserId, date, splitType, splits } = req.body;
+    const { groupId, amount, description, paidById, splitType, splits: splitsInput, originalCurrency = 'INR', createdAt } = req.body;
 
-    if (!groupId || !title || !totalAmount || !currency || !paidByUserId || !splitType || !splits || splits.length === 0) {
-      return res.status(400).json({ error: "Missing required expense fields." });
+    // Validate inputs
+    if (!groupId || !amount || !description || !paidById || !splitType || !splitsInput) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields (groupId, amount, description, paidById, splitType, splits)',
+      });
     }
 
-    const amountNum = Number(totalAmount);
-    if (amountNum <= 0) {
-      return res.status(400).json({ error: "Total amount must be greater than 0." });
+    const parsedAmount = Number(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount must be a positive number',
+      });
     }
 
-    // 1. Validate Group & PaidByUser
-    const group = await prisma.group.findUnique({ where: { id: groupId } });
-    if (!group) return res.status(404).json({ error: "Group not found." });
+    const exchangeRate = 83.0;
+    const convertedAmount = originalCurrency === 'USD' ? Number((parsedAmount * exchangeRate).toFixed(2)) : parsedAmount;
 
-    const payerMembership = await prisma.groupMembership.findFirst({
-      where: { groupId, userId: paidByUserId, isActive: true }
+    // Verify group exists
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      include: { members: true },
     });
-    if (!payerMembership) {
-      return res.status(400).json({ error: "Payer must be an active member of the group." });
+
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found',
+      });
     }
 
-    // 2. Validate all split users are active members
-    const splitUserIds = splits.map(s => s.userId);
-    const memberships = await prisma.groupMembership.findMany({
-      where: { groupId, userId: { in: splitUserIds }, isActive: true }
-    });
-    if (memberships.length !== splitUserIds.length) {
-      return res.status(400).json({ error: "All split users must be active members of the group." });
+    // Check if logged-in user is a member of the group
+    const isRequesterMember = group.members.some(m => m.userId === req.user.id);
+    if (!isRequesterMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: You must be a member of this group to add expenses',
+      });
     }
 
-    // 3. Calculate exact splits
+    const expenseDate = createdAt ? new Date(createdAt) : new Date();
+
+    // Check if payer was an active member of the group on the expense date
+    const payerMember = group.members.find(m => m.userId === paidById);
+    if (!payerMember || !payerMember.isActive || (payerMember.leftAt && expenseDate > new Date(payerMember.leftAt)) || expenseDate < new Date(payerMember.joinedAt)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payer was not an active member of the group on the expense date',
+      });
+    }
+
+    // Calculate and validate splits in original currency first
     let calculatedSplits;
     try {
-      calculatedSplits = calculateSplits(amountNum, splitType, splits, paidByUserId);
-    } catch (err) {
-      return res.status(400).json({ error: err.message });
+      calculatedSplits = calculateSplits(parsedAmount, splitType, splitsInput);
+    } catch (calcError) {
+      return res.status(400).json({
+        success: false,
+        message: calcError.message,
+      });
     }
 
-    // 4. Interactive Transaction
+    // Now convert calculated splits to INR if original currency is USD
+    if (originalCurrency === 'USD') {
+      calculatedSplits = calculatedSplits.map(s => ({
+        userId: s.userId,
+        amount: Number((s.amount * exchangeRate).toFixed(2)),
+        splitValue: splitType === 'UNEQUAL' ? Number((s.splitValue * exchangeRate).toFixed(2)) : s.splitValue
+      }));
+    }
+
+    // Verify all split users were active members of the group on the expense date
+    const invalidParticipants = calculatedSplits.filter(s => {
+      const m = group.members.find(member => member.userId === s.userId);
+      return !m || !m.isActive || (m.leftAt && expenseDate > new Date(m.leftAt)) || expenseDate < new Date(m.joinedAt);
+    });
+
+    if (invalidParticipants.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'One or more split participants were not active in the group on the expense date',
+      });
+    }
+
+    // Run database transaction
     const expense = await prisma.$transaction(async (tx) => {
-      const newExp = await tx.expense.create({
+      // 1. Create Expense
+      const newExpense = await tx.expense.create({
         data: {
           groupId,
-          title,
-          totalAmount: amountNum,
-          currency,
-          paidByUserId,
-          date: date ? new Date(date) : new Date(),
-        }
+          amount: convertedAmount,
+          originalAmount: parsedAmount,
+          originalCurrency,
+          convertedAmount,
+          description: description.trim(),
+          paidById,
+          createdAt: expenseDate,
+        },
       });
 
-      const splitsToInsert = calculatedSplits.map(s => ({
-        expenseId: newExp.id,
-        userId: s.userId,
-        amount: s.amount,
-        splitType: s.splitType,
-        splitValue: s.splitValue
-      }));
+      // 2. Create splits records
+      const splitPromises = calculatedSplits.map(split => 
+        tx.expenseSplit.create({
+          data: {
+            expenseId: newExpense.id,
+            userId: split.userId,
+            amount: split.amount,
+            splitValue: split.splitValue,
+            splitType,
+          },
+        })
+      );
 
-      await tx.expenseSplit.createMany({ data: splitsToInsert });
+      await Promise.all(splitPromises);
 
-      // Fetch the created expense with splits
-      return await tx.expense.findUnique({
-        where: { id: newExp.id },
-        include: { splits: true, paidByUser: { select: { id: true, name: true, email: true } } }
+      // Return expense details with splits
+      return tx.expense.findUnique({
+        where: { id: newExpense.id },
+        include: {
+          paidBy: { select: { id: true, name: true, email: true } },
+          splits: {
+            include: {
+              user: { select: { id: true, name: true, email: true } },
+            },
+          },
+        },
       });
     });
 
-    res.status(201).json({ message: "Expense created successfully.", data: expense });
+    return res.status(201).json({
+      success: true,
+      data: expense,
+    });
   } catch (error) {
     next(error);
   }
 };
 
-exports.getGroupExpenses = async (req, res, next) => {
-  try {
-    const groupId = req.params.id;
-    // Auth middleware already verified user is a member of this group
-    const expenses = await prisma.expense.findMany({
-      where: { groupId },
-      include: {
-        splits: true,
-        paidByUser: { select: { id: true, name: true, email: true } }
-      },
-      orderBy: { date: 'desc' }
-    });
-    res.status(200).json({ data: expenses });
-  } catch (error) {
-    next(error);
-  }
-};
-
-exports.getExpense = async (req, res, next) => {
+// @desc    Get details of a single expense
+// @route   GET /api/expenses/:id
+// @access  Private
+const getExpenseDetails = async (req, res, next) => {
   try {
     const expenseId = req.params.id;
+
     const expense = await prisma.expense.findUnique({
       where: { id: expenseId },
       include: {
-        splits: true,
-        paidByUser: { select: { id: true, name: true, email: true } },
-        group: { select: { id: true, name: true } }
-      }
+        group: {
+          include: {
+            members: true,
+          },
+        },
+        paidBy: { select: { id: true, name: true, email: true } },
+        splits: {
+          include: {
+            user: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
     });
 
-    if (!expense) return res.status(404).json({ error: "Expense not found." });
-
-    // Verify user is in the group
-    const membership = await prisma.groupMembership.findFirst({
-      where: { groupId: expense.groupId, userId: req.user.id }
-    });
-    if (!membership) return res.status(403).json({ error: "Not authorized to view this expense." });
-
-    res.status(200).json({ data: expense });
-  } catch (error) {
-    next(error);
-  }
-};
-
-exports.updateExpense = async (req, res, next) => {
-  try {
-    const expenseId = req.params.id;
-    const { title, totalAmount, currency, paidByUserId, date, splitType, splits } = req.body;
-
-    const existingExpense = await prisma.expense.findUnique({ where: { id: expenseId } });
-    if (!existingExpense) return res.status(404).json({ error: "Expense not found." });
-
-    // Verify user is an active member of the group
-    const requestorMembership = await prisma.groupMembership.findFirst({
-      where: { groupId: existingExpense.groupId, userId: req.user.id, isActive: true }
-    });
-    if (!requestorMembership) return res.status(403).json({ error: "Only active members can update expenses." });
-
-    // Update fields if provided, else keep existing
-    const newTotal = totalAmount ? Number(totalAmount) : Number(existingExpense.totalAmount);
-    if (newTotal <= 0) return res.status(400).json({ error: "Total amount must be greater than 0." });
-
-    let calculatedSplits = null;
-    if (splits && splitType) {
-      // Validate active members
-      const splitUserIds = splits.map(s => s.userId);
-      const memberships = await prisma.groupMembership.findMany({
-        where: { groupId: existingExpense.groupId, userId: { in: splitUserIds }, isActive: true }
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: 'Expense not found',
       });
-      if (memberships.length !== splitUserIds.length) {
-        return res.status(400).json({ error: "All split users must be active members of the group." });
-      }
-
-      const newPayer = paidByUserId || existingExpense.paidByUserId;
-      try {
-        calculatedSplits = calculateSplits(newTotal, splitType, splits, newPayer);
-      } catch (err) {
-        return res.status(400).json({ error: err.message });
-      }
     }
 
-    const updatedExpense = await prisma.$transaction(async (tx) => {
-      const updExp = await tx.expense.update({
-        where: { id: expenseId },
-        data: {
-          title: title || existingExpense.title,
-          totalAmount: newTotal,
-          currency: currency || existingExpense.currency,
-          paidByUserId: paidByUserId || existingExpense.paidByUserId,
-          date: date ? new Date(date) : existingExpense.date,
-        }
+    // Verify requester is a member of the group
+    const isMember = expense.group.members.some(m => m.userId === req.user.id);
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: You are not a member of this group',
       });
+    }
 
-      if (calculatedSplits) {
-        await tx.expenseSplit.deleteMany({ where: { expenseId } });
-        const splitsToInsert = calculatedSplits.map(s => ({
-          expenseId,
-          userId: s.userId,
-          amount: s.amount,
-          splitType: s.splitType,
-          splitValue: s.splitValue
-        }));
-        await tx.expenseSplit.createMany({ data: splitsToInsert });
-      }
+    // Format response to omit raw group members list
+    const formattedExpense = {
+      id: expense.id,
+      description: expense.description,
+      amount: Number(expense.amount),
+      paidBy: expense.paidBy,
+      createdAt: expense.createdAt,
+      group: {
+        id: expense.group.id,
+        name: expense.group.name,
+      },
+      splits: expense.splits.map(s => ({
+        id: s.id,
+        userId: s.userId,
+        userName: s.user.name,
+        email: s.user.email,
+        amount: Number(s.amount),
+        splitValue: Number(s.splitValue),
+        splitType: s.splitType,
+      })),
+    };
 
-      return await tx.expense.findUnique({
-        where: { id: expenseId },
-        include: { splits: true, paidByUser: { select: { id: true, name: true, email: true } } }
-      });
+    return res.status(200).json({
+      success: true,
+      data: formattedExpense,
     });
-
-    res.status(200).json({ message: "Expense updated successfully.", data: updatedExpense });
   } catch (error) {
     next(error);
   }
 };
 
-exports.deleteExpense = async (req, res, next) => {
+// @desc    Delete an expense
+// @route   DELETE /api/expenses/:id
+// @access  Private
+const deleteExpense = async (req, res, next) => {
   try {
     const expenseId = req.params.id;
 
-    const existingExpense = await prisma.expense.findUnique({ where: { id: expenseId } });
-    if (!existingExpense) return res.status(404).json({ error: "Expense not found." });
-
-    // Verify user is an active member
-    const requestorMembership = await prisma.groupMembership.findFirst({
-      where: { groupId: existingExpense.groupId, userId: req.user.id, isActive: true }
+    const expense = await prisma.expense.findUnique({
+      where: { id: expenseId },
+      include: {
+        group: {
+          include: {
+            members: true,
+          },
+        },
+      },
     });
-    if (!requestorMembership) return res.status(403).json({ error: "Only active members can delete expenses." });
 
-    await prisma.expense.delete({ where: { id: expenseId } });
-    // Cascade delete automatically handles expenseSplits
-    res.status(200).json({ message: "Expense deleted successfully." });
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: 'Expense not found',
+      });
+    }
+
+    // Verify requesting user is a member of the group
+    const isMember = expense.group.members.some(m => m.userId === req.user.id);
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: You are not authorized to delete expenses in this group',
+      });
+    }
+
+    // Delete the expense
+    await prisma.expense.delete({
+      where: { id: expenseId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Expense deleted successfully',
+    });
   } catch (error) {
     next(error);
   }
+};
+
+module.exports = {
+  createExpense,
+  getExpenseDetails,
+  deleteExpense,
+  calculateSplits,
 };

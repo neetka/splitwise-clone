@@ -1,60 +1,63 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import LoginPage from './pages/LoginPage.jsx';
-import RegisterPage from './pages/RegisterPage.jsx';
-import DashboardPage from './pages/DashboardPage.jsx';
-import GroupListPage from './pages/GroupListPage.jsx';
-import GroupDetailsPage from './pages/GroupDetailsPage.jsx';
-import ExpenseListPage from './pages/ExpenseListPage.jsx';
-import ExpenseDetailsPage from './pages/ExpenseDetailsPage.jsx';
-import ExpenseFormPage from './pages/ExpenseFormPage.jsx';
-import GroupBalancesPage from './pages/GroupBalancesPage.jsx';
-import GlobalBalancesPage from './pages/GlobalBalancesPage.jsx';
-import GroupSettlementsPage from './pages/GroupSettlementsPage.jsx';
-import GlobalSettlementsPage from './pages/GlobalSettlementsPage.jsx';
-import NotFoundPage from './pages/NotFoundPage.jsx';
-import ProtectedRoute from './components/ProtectedRoute.jsx';
-import { useAuth } from './contexts/AuthContext.jsx';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
 
-function AppRoutes() {
-  const { user } = useAuth();
+// Pages
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import GroupDetails from './pages/GroupDetails';
+import ExpenseDetails from './pages/ExpenseDetails';
 
-  return (
-    <Routes>
-      <Route
-        path="/login"
-        element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />}
-      />
-      <Route
-        path="/register"
-        element={user ? <Navigate to="/dashboard" replace /> : <RegisterPage />}
-      />
-      <Route element={<ProtectedRoute />}>
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/groups" element={<GroupListPage />} />
-        <Route path="/groups/:id" element={<GroupDetailsPage />} />
-        <Route path="/groups/:groupId/expenses" element={<ExpenseListPage />} />
-        <Route path="/groups/:groupId/expenses/new" element={<ExpenseFormPage />} />
-        <Route path="/groups/:groupId/expenses/:expenseId" element={<ExpenseDetailsPage />} />
-        <Route path="/groups/:groupId/expenses/:expenseId/edit" element={<ExpenseFormPage />} />
-        <Route path="/groups/:groupId/balances" element={<GroupBalancesPage />} />
-        <Route path="/groups/:groupId/settlements" element={<GroupSettlementsPage />} />
-        <Route path="/balances" element={<GlobalBalancesPage />} />
-        <Route path="/settlements" element={<GlobalSettlementsPage />} />
-      </Route>
-      <Route
-        path="/"
-        element={<Navigate to={user ? '/dashboard' : '/login'} replace />}
-      />
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
-  );
-}
+// Helper Root Router to handle initial redirect
+const RootRouter = () => {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />;
+};
 
 function App() {
   return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Authentication Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          
+          {/* Protected Application Routes */}
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/group/:id" 
+            element={
+              <ProtectedRoute>
+                <GroupDetails />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/expense/:id" 
+            element={
+              <ProtectedRoute>
+                <ExpenseDetails />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Root and Fallback Catch-All */}
+          <Route path="/" element={<RootRouter />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

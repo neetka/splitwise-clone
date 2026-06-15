@@ -1,15 +1,20 @@
-const express = require("express");
-const { createExpense, getExpense, updateExpense, deleteExpense } = require("../controllers/expenseController");
-const { verifyToken } = require("../middleware/authMiddleware");
+const express = require('express');
+const {
+  createExpense,
+  getExpenseDetails,
+  deleteExpense,
+} = require('../controllers/expenseController');
+const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Require valid JWT token for all expense routes
-router.use(verifyToken);
+router.use(protect); // All expense routes require auth
 
-router.post("/", createExpense);
-router.get("/:id", getExpense);
-router.put("/:id", updateExpense);
-router.delete("/:id", deleteExpense);
+router.route('/')
+  .post(createExpense);
+
+router.route('/:id')
+  .get(getExpenseDetails)
+  .delete(deleteExpense);
 
 module.exports = router;
